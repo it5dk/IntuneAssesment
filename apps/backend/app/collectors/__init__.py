@@ -1,3 +1,18 @@
+""" BEGIN AUTODOC HEADER
+#  File: apps\backend\app\collectors\__init__.py
+#  Description: (edit inside USER NOTES below)
+# 
+#  BEGIN AUTODOC META
+#  Version: 0.0.0.3
+#  Last-Updated: 2026-02-19 00:30:35
+#  Managed-By: autosave.ps1
+#  END AUTODOC META
+# 
+#  BEGIN USER NOTES
+#  Your notes here. We will NEVER change this block.
+#  END USER NOTES
+""" END AUTODOC HEADER
+
 from app.collectors.entra_users import collect_entra_users
 from app.collectors.entra_groups import collect_entra_groups
 from app.collectors.conditional_access import collect_conditional_access_policies
@@ -19,3 +34,4 @@ COLLECTOR_MAP: dict[str, callable] = {
     "microsoft.graph.mobileAppAssessment": collect_app_assignments,
     "intune.groupAssignment": collect_group_policy_assignments,
 }
+

@@ -1,3 +1,18 @@
+""" BEGIN AUTODOC HEADER
+#  File: apps\backend\app\api\routes\drifts.py
+#  Description: (edit inside USER NOTES below)
+# 
+#  BEGIN AUTODOC META
+#  Version: 0.0.0.3
+#  Last-Updated: 2026-02-19 00:30:35
+#  Managed-By: autosave.ps1
+#  END AUTODOC META
+# 
+#  BEGIN USER NOTES
+#  Your notes here. We will NEVER change this block.
+#  END USER NOTES
+""" END AUTODOC HEADER
+
 from uuid import UUID
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -52,3 +67,4 @@ async def resolve_drift(drift_id: UUID, db: AsyncSession = Depends(get_db)):
     drift.resolved_at = datetime.now(timezone.utc)
     await db.flush()
     return {"status": "ok", "drift_id": str(drift_id)}
+

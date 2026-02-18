@@ -1,3 +1,18 @@
+""" BEGIN AUTODOC HEADER
+#  File: apps\backend\app\api\routes\zero_trust.py
+#  Description: (edit inside USER NOTES below)
+# 
+#  BEGIN AUTODOC META
+#  Version: 0.0.0.3
+#  Last-Updated: 2026-02-19 00:30:35
+#  Managed-By: autosave.ps1
+#  END AUTODOC META
+# 
+#  BEGIN USER NOTES
+#  Your notes here. We will NEVER change this block.
+#  END USER NOTES
+""" END AUTODOC HEADER
+
 """
 Zero Trust Identity Assessment Engine
 Fetches data from 9+ Graph API endpoints in parallel, scores 7 pillars, and computes per-user risk.
@@ -37,6 +52,11 @@ CRITICAL_ADMIN_ROLES = {
     "Conditional Access Administrator", "User Administrator",
     "Application Administrator", "Cloud Application Administrator",
 }
+HIGH_RISK_OAUTH_SCOPES = {
+    "Directory.ReadWrite.All", "RoleManagement.ReadWrite.Directory", "AppRoleAssignment.ReadWrite.All",
+    "Application.ReadWrite.All", "User.ReadWrite.All", "Group.ReadWrite.All", "Files.ReadWrite.All",
+    "Sites.ReadWrite.All", "Mail.ReadWrite", "MailboxSettings.ReadWrite",
+}
 
 
 def _score_to_grade(score: int) -> str:
@@ -57,7 +77,7 @@ async def _fetch_users() -> list[dict]:
     return await graph_client.get_all(
         "/users",
         params={
-            "$select": "id,displayName,userPrincipalName,accountEnabled,createdDateTime,signInActivity,userType",
+            "$select": "id,displayName,userPrincipalName,accountEnabled,createdDateTime,signInActivity,userType,onPremisesSyncEnabled,assignedLicenses,passwordPolicies,lastPasswordChangeDateTime",
             "$top": "999",
         },
     )
@@ -171,6 +191,16 @@ async def _fetch_groups() -> list[dict]:
             "$top": "999",
         },
     )
+
+
+async def _fetch_subscribed_skus() -> list[dict]:
+    try:
+        return await graph_client.get_all(
+            "/subscribedSkus",
+            params={"$select": "skuId,skuPartNumber"},
+        )
+    except Exception:
+        return []
 
 
 # ── Pillar Scorers ───────────────────────────────────────────────────────────
@@ -432,6 +462,7 @@ def _assess_privilege(
     # Build role breakdown
     role_breakdown = []
     all_admin_users: dict[str, list[str]] = {}  # user_id -> list of role names
+    admin_user_profile: dict[str, dict[str, str]] = {}  # user_id -> profile
     global_admin_count = 0
 
     for role in roles_with_members:
@@ -446,6 +477,11 @@ def _assess_privilege(
             uid = m.get("id", "")
             if uid not in all_admin_users:
                 all_admin_users[uid] = []
+            if uid:
+                admin_user_profile[uid] = {
+                    "displayName": m.get("displayName", ""),
+                    "userPrincipalName": m.get("userPrincipalName", ""),
+                }
             all_admin_users[uid].append(name)
 
         if user_members:
@@ -504,7 +540,13 @@ def _assess_privilege(
         "details": {
             "role_breakdown": role_breakdown[:20],
             "users_with_multiple_roles": [
-                {"userId": uid, "roles": all_admin_users[uid], "roleCount": len(all_admin_users[uid])}
+                {
+                    "userId": uid,
+                    "displayName": admin_user_profile.get(uid, {}).get("displayName", ""),
+                    "userPrincipalName": admin_user_profile.get(uid, {}).get("userPrincipalName", ""),
+                    "roles": all_admin_users[uid],
+                    "roleCount": len(all_admin_users[uid]),
+                }
                 for uid in multi_role_users[:30]
             ],
         },
@@ -740,6 +782,7 @@ def _assess_group_risk(groups: list[dict] | None, ca_policies: list[dict] | None
 def _compute_user_risk_scores(
     users: list[dict],
     pillars: dict,
+    sku_map: dict[str, str] | None = None,
 ) -> list[dict]:
     # Build lookup sets from pillar data
     risky_user_map: dict[str, str] = {}  # user_id -> risk_level
@@ -808,16 +851,61 @@ def _compute_user_risk_scores(
             score += 5
             factors.append({"pillar": "access_footprint", "factor": "External guest account", "severity": "low"})
 
-        if factors:
-            user_scores.append({
-                "id": uid,
-                "displayName": user.get("displayName", ""),
-                "userPrincipalName": user.get("userPrincipalName", ""),
-                "accountEnabled": user.get("accountEnabled", True),
-                "userType": user.get("userType", "Member"),
-                "risk_score": min(100, score),
-                "risk_factors": factors,
-            })
+        assigned_licenses = user.get("assignedLicenses") or []
+        license_names = []
+        for lic in assigned_licenses:
+            sku_id = str(lic.get("skuId", ""))
+            if not sku_id:
+                continue
+            license_names.append((sku_map or {}).get(sku_id, sku_id))
+
+        user_type = user.get("userType", "Member")
+        onprem_synced = bool(user.get("onPremisesSyncEnabled", False))
+        pwd_policies = str(user.get("passwordPolicies", "") or "")
+        last_pwd_change = str(user.get("lastPasswordChangeDateTime", "") or "")
+        sign_in_activity = user.get("signInActivity") or {}
+        last_sign_in = str(sign_in_activity.get("lastSignInDateTime", "") or "")
+
+        if user_type == "Guest":
+            password_expires_on = "N/A"
+            password_length_set = "N/A"
+        elif onprem_synced:
+            password_expires_on = "On-prem policy"
+            password_length_set = "On-prem policy"
+        elif "DisablePasswordExpiration" in pwd_policies:
+            password_expires_on = "Never"
+            password_length_set = "Strong (min 8)"
+        elif last_pwd_change:
+            try:
+                pwd_change_dt = datetime.fromisoformat(last_pwd_change.replace("Z", "+00:00"))
+                expires_dt = pwd_change_dt + timedelta(days=90)
+                password_expires_on = expires_dt.isoformat()
+            except Exception:
+                password_expires_on = "Policy-based"
+            password_length_set = "Strong (min 8)"
+        else:
+            password_expires_on = "Policy-based"
+            password_length_set = "Strong (min 8)"
+
+        if "DisableStrongPassword" in pwd_policies:
+            password_length_set = "Weak policy"
+
+        user_scores.append({
+            "id": uid,
+            "displayName": user.get("displayName", ""),
+            "userPrincipalName": user.get("userPrincipalName", ""),
+            "accountEnabled": user.get("accountEnabled", True),
+            "userType": user_type,
+            "risk_score": min(100, score),
+            "risk_factors": factors,
+            "created_date_time": user.get("createdDateTime", ""),
+            "source": "synced" if onprem_synced else "cloud",
+            "licenses": license_names,
+            "password_expires_on": password_expires_on,
+            "password_length_set": password_length_set,
+            "last_sign_in": last_sign_in,
+            "risk_factor_count": len(factors),
+        })
 
     user_scores.sort(key=lambda u: u["risk_score"], reverse=True)
     return user_scores
@@ -848,10 +936,349 @@ async def _check_permissions() -> list[dict]:
     return list(results)
 
 
+def _is_guid(value: str) -> bool:
+    chunks = value.split("-")
+    sizes = [8, 4, 4, 4, 12]
+    if len(chunks) != 5:
+        return False
+    for c, s in zip(chunks, sizes):
+        if len(c) != s:
+            return False
+        if any(ch not in "0123456789abcdefABCDEF" for ch in c):
+            return False
+    return True
+
+
+def _as_list(data: dict | None) -> list[dict]:
+    if not data:
+        return []
+    return data.get("value", []) if isinstance(data, dict) else []
+
+
+@router.get("/user-assessment")
+async def get_user_assessment(
+    user_key: str = Query(..., description="User ID or UPN"),
+    lookback_days: int = Query(30, ge=1, le=180),
+):
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=lookback_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # A) Resolve user
+    user_select = "id,displayName,userPrincipalName,accountEnabled,createdDateTime,userType,mail,jobTitle,department,onPremisesSyncEnabled"
+    user_path = f"/users/{user_key}" if _is_guid(user_key) else f"/users/{user_key}"
+    user = await graph_client.get(user_path, params={"$select": user_select})
+    user_id = user.get("id", "")
+
+    # B) Group + role exposure
+    group_membership: list[dict] = []
+    role_assignments: list[dict] = []
+    role_fallback_memberof: list[dict] = []
+    role_assignment_error = None
+    try:
+        group_membership = await graph_client.get_all(
+            f"/users/{user_id}/transitiveMemberOf",
+            params={"$select": "id,displayName"},
+        )
+    except Exception:
+        group_membership = []
+
+    try:
+        ra = await graph_client.get(
+            "/roleManagement/directory/roleAssignments",
+            params={
+                "$filter": f"principalId eq '{user_id}'",
+                "$expand": "roleDefinition($select=displayName)",
+            },
+        )
+        role_assignments = _as_list(ra)
+    except Exception as e:
+        role_assignment_error = str(e)
+        try:
+            role_fallback_memberof = await graph_client.get_all(
+                f"/users/{user_id}/memberOf",
+                params={"$select": "id,displayName"},
+            )
+        except Exception:
+            role_fallback_memberof = []
+
+    # C) Authentication strength
+    auth_methods: list[dict] = []
+    auth_requirements: dict | None = None
+    try:
+        methods = await graph_client.get(f"/users/{user_id}/authentication/methods")
+        auth_methods = _as_list(methods)
+    except Exception:
+        auth_methods = []
+    try:
+        auth_requirements = await graph_client.get(f"/users/{user_id}/authentication/requirements")
+    except Exception:
+        auth_requirements = None
+
+    # D) Risk signals
+    risky_users: list[dict] = []
+    risky_signins: list[dict] = []
+    risk_errors: list[str] = []
+    try:
+        ru = await graph_client.get(
+            "/identityProtection/riskyUsers",
+            params={"$filter": f"userId eq '{user_id}'"},
+        )
+        risky_users = _as_list(ru)
+    except Exception as e:
+        risk_errors.append(f"riskyUsers unavailable: {e}")
+    try:
+        rs = await graph_client.get(
+            "/identityProtection/riskySignIns",
+            params={"$filter": f"userId eq '{user_id}' and riskLastUpdatedDateTime ge {cutoff}"},
+        )
+        risky_signins = _as_list(rs)
+    except Exception as e:
+        risk_errors.append(f"riskySignIns unavailable: {e}")
+
+    # E) Sign-in behavior
+    sign_ins: list[dict] = []
+    try:
+        si = await graph_client.get(
+            "/auditLogs/signIns",
+            params={
+                "$filter": f"userId eq '{user_id}' and createdDateTime ge {cutoff}",
+                "$top": "50",
+            },
+        )
+        sign_ins = _as_list(si)
+    except Exception:
+        sign_ins = []
+
+    # F) Conditional Access coverage
+    ca_policies: list[dict] = []
+    applicable_policies: list[dict] = []
+    excluded_policies: list[dict] = []
+    try:
+        ca_policies = await graph_client.get_all("/identity/conditionalAccess/policies")
+        group_ids = {g.get("id", "") for g in group_membership if g.get("id")}
+        for p in ca_policies:
+            if p.get("state") not in {"enabled", "enabledForReportingButNotEnforced"}:
+                continue
+            users_cond = (p.get("conditions") or {}).get("users") or {}
+            include_users = set(users_cond.get("includeUsers") or [])
+            exclude_users = set(users_cond.get("excludeUsers") or [])
+            include_groups = set(users_cond.get("includeGroups") or [])
+            exclude_groups = set(users_cond.get("excludeGroups") or [])
+
+            included = ("All" in include_users) or (user_id in include_users) or bool(group_ids & include_groups)
+            excluded = (user_id in exclude_users) or bool(group_ids & exclude_groups)
+            entry = {
+                "id": p.get("id", ""),
+                "displayName": p.get("displayName", ""),
+                "state": p.get("state", ""),
+            }
+            if excluded:
+                excluded_policies.append(entry)
+            if included and not excluded:
+                applicable_policies.append(entry)
+    except Exception:
+        ca_policies = []
+
+    # G) App access + consent risk
+    app_role_assignments: list[dict] = []
+    oauth_grants: list[dict] = []
+    try:
+        ara = await graph_client.get(
+            f"/users/{user_id}/appRoleAssignments",
+            params={"$expand": "resource($select=displayName,appId)"},
+        )
+        app_role_assignments = _as_list(ara)
+    except Exception:
+        app_role_assignments = []
+    try:
+        og = await graph_client.get(
+            "/oauth2PermissionGrants",
+            params={"$filter": f"principalId eq '{user_id}'"},
+        )
+        oauth_grants = _as_list(og)
+    except Exception:
+        oauth_grants = []
+
+    # Analysis
+    auth_types = [str(m.get("@odata.type", "")).lower() for m in auth_methods]
+    strong_hits = sum(1 for t in auth_types if any(s in t for s in ["fido2", "windowshello", "certificate"]))
+    weak_hits = sum(1 for t in auth_types if any(w in t for w in ["phone", "sms", "voice"]))
+    method_count = len(auth_methods)
+    no_mfa_methods = method_count == 0
+    only_weak_methods = method_count > 0 and strong_hits == 0 and weak_hits > 0
+    excessive_method_sprawl = method_count >= 6
+
+    auth_score = 0
+    if no_mfa_methods:
+        auth_score += 25
+    elif only_weak_methods:
+        auth_score += 18
+    elif strong_hits == 0:
+        auth_score += 10
+    if excessive_method_sprawl:
+        auth_score += 4
+    auth_score = min(25, auth_score)
+
+    success_count = sum(1 for s in sign_ins if str((s.get("status") or {}).get("errorCode", 0)) == "0")
+    failure_count = max(0, len(sign_ins) - success_count)
+    countries = {
+        str(((s.get("location") or {}).get("countryOrRegion", "") or "")).strip()
+        for s in sign_ins
+        if ((s.get("location") or {}).get("countryOrRegion"))
+    }
+    repeated_mfa_prompts = sum(
+        1 for s in sign_ins
+        if "mfa" in str((s.get("status") or {}).get("failureReason", "")).lower()
+    )
+    risk_state_high = any((r.get("riskLevel") or "").lower() == "high" for r in risky_users)
+    sign_in_risk_score = 0
+    sign_in_risk_score += min(10, failure_count // 3)
+    sign_in_risk_score += min(6, max(0, len(countries) - 1) * 2)
+    sign_in_risk_score += min(5, repeated_mfa_prompts // 2)
+    sign_in_risk_score += min(10, len(risky_signins) * 3)
+    if risk_state_high:
+        sign_in_risk_score += 8
+    sign_in_risk_score = min(25, sign_in_risk_score)
+
+    ca_score = 0
+    if not applicable_policies:
+        ca_score += 12
+    ca_score += min(12, len(excluded_policies) * 3)
+    ca_score = min(20, ca_score)
+
+    privileged_role_names = []
+    for ra in role_assignments:
+        rd = ra.get("roleDefinition") or {}
+        name = rd.get("displayName")
+        if name:
+            privileged_role_names.append(str(name))
+    has_privileged_role = any(r in CRITICAL_ADMIN_ROLES for r in privileged_role_names)
+    privilege_score = 0
+    if has_privileged_role:
+        privilege_score += 14
+    privilege_score += min(6, max(0, len(privileged_role_names) - 1) * 2)
+    privilege_score = min(20, privilege_score)
+
+    risky_grants = []
+    for g in oauth_grants:
+        scopes = set(str(g.get("scope", "")).split())
+        hit = list(scopes & HIGH_RISK_OAUTH_SCOPES)
+        if hit:
+            risky_grants.append({
+                "id": g.get("id"),
+                "consentType": g.get("consentType", ""),
+                "scopes": hit,
+            })
+    consent_score = min(10, len(risky_grants) * 3 + (3 if len(oauth_grants) > 8 else 0))
+
+    weighted_total = min(100, auth_score + sign_in_risk_score + ca_score + privilege_score + consent_score)
+
+    latest_signin_dt = None
+    for s in sign_ins:
+        ts = s.get("createdDateTime")
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            if latest_signin_dt is None or dt > latest_signin_dt:
+                latest_signin_dt = dt
+        except Exception:
+            continue
+    stale_but_enabled = bool(
+        user.get("accountEnabled", True)
+        and latest_signin_dt is not None
+        and latest_signin_dt < (now - timedelta(days=90))
+    )
+    high_risk_conditions = []
+    if has_privileged_role and strong_hits == 0:
+        high_risk_conditions.append("User has privileged role and lacks phishing-resistant MFA.")
+    if excluded_policies:
+        high_risk_conditions.append("User is excluded from one or more Conditional Access baseline policies.")
+    if risk_state_high or len(risky_signins) >= 3:
+        high_risk_conditions.append("User has high or repeated risky sign-in signals.")
+    if risky_grants:
+        high_risk_conditions.append("User has broad OAuth grants to potentially risky apps/scopes.")
+    if stale_but_enabled and has_privileged_role:
+        high_risk_conditions.append("Account appears stale but enabled and retains privileged exposure.")
+
+    checklist = []
+    if no_mfa_methods or only_weak_methods:
+        checklist.append({"priority": "high", "action": "Enforce phishing-resistant MFA (FIDO2/WHfB/cert) and remove weak methods."})
+    if excluded_policies or not applicable_policies:
+        checklist.append({"priority": "high", "action": "Review and remove risky CA exclusions; ensure baseline CA applies to this user."})
+    if has_privileged_role:
+        checklist.append({"priority": "high", "action": "Move privileged access to JIT/PIM and require approval + alerts."})
+    if risky_grants:
+        checklist.append({"priority": "medium", "action": "Review OAuth grants and revoke broad/high-privilege consents."})
+    if failure_count > 10 or repeated_mfa_prompts > 3:
+        checklist.append({"priority": "medium", "action": "Investigate sign-in anomalies and tune policy controls."})
+    if not checklist:
+        checklist.append({"priority": "low", "action": "Maintain current controls and monitor weekly for drift."})
+
+    return {
+        "generated_at": now.isoformat(),
+        "lookback_days": lookback_days,
+        "user": {
+            "id": user.get("id"),
+            "displayName": user.get("displayName"),
+            "userPrincipalName": user.get("userPrincipalName"),
+            "accountEnabled": user.get("accountEnabled"),
+            "userType": user.get("userType"),
+            "department": user.get("department"),
+            "jobTitle": user.get("jobTitle"),
+            "onPremisesSyncEnabled": user.get("onPremisesSyncEnabled"),
+        },
+        "goals": [
+            "Identify risky behavior and risk state for this user.",
+            "Verify authentication strength and MFA coverage.",
+            "Determine Conditional Access coverage and exclusions affecting this user.",
+            "Identify privileged roles/admin exposure and governance risks.",
+            "Identify risky app consents (OAuth) and app access paths.",
+            "Produce a clear remediation checklist and a 0-100 risk score with explanation.",
+        ],
+        "risk_score": weighted_total,
+        "pillars": {
+            "authentication_strength": {"score": auth_score, "max": 25, "notes": {"methods_total": method_count, "strong_methods": strong_hits, "weak_methods": weak_hits}},
+            "signin_risk_anomalies": {"score": sign_in_risk_score, "max": 25, "notes": {"successes": success_count, "failures": failure_count, "countries_seen": len(countries), "risky_signins": len(risky_signins)}},
+            "conditional_access_gaps": {"score": ca_score, "max": 20, "notes": {"applicable_policies": len(applicable_policies), "excluded_policies": len(excluded_policies)}},
+            "privilege_exposure": {"score": privilege_score, "max": 20, "notes": {"roles": privileged_role_names}},
+            "consent_app_grants_risk": {"score": consent_score, "max": 10, "notes": {"oauth_grants": len(oauth_grants), "risky_grants": len(risky_grants)}},
+        },
+        "high_risk_conditions": high_risk_conditions,
+        "remediation_checklist": checklist,
+        "data_collection": {
+            "groups_transitive_memberof_count": len(group_membership),
+            "role_assignments_count": len(role_assignments),
+            "role_assignment_error": role_assignment_error,
+            "role_fallback_memberof_count": len(role_fallback_memberof),
+            "authentication_methods_count": len(auth_methods),
+            "auth_requirements_available": auth_requirements is not None,
+            "risky_users_count": len(risky_users),
+            "risky_signins_count": len(risky_signins),
+            "risk_signal_errors": risk_errors,
+            "signins_count": len(sign_ins),
+            "ca_policies_total": len(ca_policies),
+            "ca_applicable_count": len(applicable_policies),
+            "ca_excluded_count": len(excluded_policies),
+            "app_role_assignments_count": len(app_role_assignments),
+            "oauth_grants_count": len(oauth_grants),
+        },
+        "raw_samples": {
+            "applicable_policies": applicable_policies[:20],
+            "excluded_policies": excluded_policies[:20],
+            "risky_grants": risky_grants[:20],
+            "recent_signins": sign_ins[:20],
+            "risky_users": risky_users[:10],
+            "risky_signins": risky_signins[:20],
+            "privileged_roles": privileged_role_names,
+        },
+    }
+
+
 # ── Main Endpoint ────────────────────────────────────────────────────────────
 
 @router.get("/assessment")
-async def get_assessment(top_users: int = Query(50, le=200)):
+async def get_assessment(top_users: int = Query(50, le=5000)):
     """Run a full Zero Trust identity assessment across 7 pillars."""
     start = datetime.now(timezone.utc)
 
@@ -867,6 +1294,7 @@ async def get_assessment(top_users: int = Query(50, le=200)):
         _fetch_oauth_grants(),                  # 7
         _fetch_service_principals(),            # 8
         _fetch_groups(),                        # 9
+        _fetch_subscribed_skus(),               # 10
         return_exceptions=True,
     )
 
@@ -887,6 +1315,14 @@ async def get_assessment(top_users: int = Query(50, le=200)):
     oauth_grants = _safe(7)
     service_principals = _safe(8)
     groups = _safe(9)
+    subscribed_skus = _safe(10) or []
+
+    sku_map = {}
+    for sku in subscribed_skus:
+        sku_id = str(sku.get("skuId", ""))
+        sku_part = str(sku.get("skuPartNumber", ""))
+        if sku_id:
+            sku_map[sku_id] = sku_part or sku_id
 
     total_users = len(users)
 
@@ -909,7 +1345,7 @@ async def get_assessment(top_users: int = Query(50, le=200)):
         composite = -1
 
     # Phase 4: Per-user risk ranking
-    top_risk_users = _compute_user_risk_scores(users, pillars)[:top_users]
+    top_risk_users = _compute_user_risk_scores(users, pillars, sku_map)[:top_users]
 
     # Phase 5: Permission status
     perm_checks = await _check_permissions()
@@ -935,3 +1371,4 @@ async def get_assessment(top_users: int = Query(50, le=200)):
             "checks": perm_checks,
         },
     }
+

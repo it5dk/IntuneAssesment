@@ -1,3 +1,18 @@
+""" BEGIN AUTODOC HEADER
+#  File: apps\backend\app\api\routes\snapshots.py
+#  Description: (edit inside USER NOTES below)
+# 
+#  BEGIN AUTODOC META
+#  Version: 0.0.0.3
+#  Last-Updated: 2026-02-19 00:30:35
+#  Managed-By: autosave.ps1
+#  END AUTODOC META
+# 
+#  BEGIN USER NOTES
+#  Your notes here. We will NEVER change this block.
+#  END USER NOTES
+""" END AUTODOC HEADER
+
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,3 +64,4 @@ async def set_baseline(snapshot_id: UUID, db: AsyncSession = Depends(get_db)):
     monitor.baseline_snapshot_id = snapshot_id
     await db.flush()
     return {"status": "ok", "baseline_snapshot_id": str(snapshot_id)}
+

@@ -1,3 +1,21 @@
+""" BEGIN AUTODOC HEADER
+#  File: apps\backend\app\api\routes\devices.py
+#  Description: (edit inside USER NOTES below)
+# 
+#  BEGIN AUTODOC META
+#  Version: 0.0.0.3
+#  Last-Updated: 2026-02-19 00:30:35
+#  Managed-By: autosave.ps1
+#  END AUTODOC META
+# 
+#  BEGIN USER NOTES
+#  Your notes here. We will NEVER change this block.
+#  END USER NOTES
+""" END AUTODOC HEADER
+
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +27,9 @@ from app.models.monitor import Monitor
 from app.models.template import Template
 
 router = APIRouter(prefix="/devices", tags=["devices"])
+DEVICES_GUIDANCE_URL = "https://learn.microsoft.com/en-us/intune/intune-service/protect/zero-trust-configure-security?toc=%2Fsecurity%2Fzero-trust%2Fassessment%2Ftoc.json&bc=%2Fsecurity%2Fzero-trust%2Fassessment%2Ftoc.json"
+ZTA_SOURCE_URL = "https://github.com/microsoft/zerotrustassessment/tree/psnext/src/powershell"
+TEST_META_PATH = Path(__file__).resolve().parents[2] / "data" / "zerotrust_testmeta.json"
 
 
 @router.get("")
@@ -147,3 +168,69 @@ async def device_summary(db: AsyncSession = Depends(get_db)):
         "os_breakdown": os_breakdown,
         "encryption": {"encrypted": encrypted, "not_encrypted": not_encrypted},
     }
+
+
+@router.get("/run")
+async def run_devices_guidance_check():
+    if not TEST_META_PATH.exists():
+        return {
+            "run_at": datetime.now(timezone.utc).isoformat(),
+            "source_url": DEVICES_GUIDANCE_URL,
+            "zta_source_url": ZTA_SOURCE_URL,
+            "summary": {"total_controls": 0, "high_priority": 0, "medium_priority": 0},
+            "controls": [],
+            "ideas_to_add_more": ["Devices metadata source file is missing. Re-sync from zerotrustassessment psnext."],
+            "error": f"Missing file: {TEST_META_PATH}",
+        }
+
+    with TEST_META_PATH.open("r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    device_checks = []
+    for test_id, item in meta.items():
+        if str(item.get("Pillar", "")).lower() != "devices":
+            continue
+        risk = str(item.get("RiskLevel", "Medium")).lower()
+        priority = "high" if risk == "high" else "medium" if risk == "medium" else "low"
+        device_checks.append({
+            "id": str(item.get("TestId", test_id)),
+            "control": item.get("Title", f"Test {test_id}"),
+            "license": f"Tenant: {', '.join(item.get('TenantType', []))}" if item.get("TenantType") else "Tenant: N/A",
+            "priority": priority,
+            "category": item.get("Category", "General"),
+            "implementation_cost": item.get("ImplementationCost", "Unknown"),
+            "user_impact": item.get("UserImpact", "Unknown"),
+            "sfi_pillar": item.get("SfiPillar", "Devices"),
+        })
+
+    device_checks.sort(key=lambda x: int(x["id"]) if x["id"].isdigit() else 999999)
+
+    themes = {}
+    for check in device_checks:
+        theme = check["sfi_pillar"] or "Devices"
+        themes.setdefault(theme, []).append(check)
+
+    controls = [{"theme": theme, "checks": checks} for theme, checks in themes.items()]
+
+    total = len(device_checks)
+    high = sum(1 for c in device_checks if c["priority"] == "high")
+    medium = sum(1 for c in device_checks if c["priority"] == "medium")
+    low = sum(1 for c in device_checks if c["priority"] == "low")
+
+    ideas_to_add = [
+        "Track compliance drift by platform and ownership type.",
+        "Alert on unmanaged or stale devices with high-risk posture.",
+        "Map each failing control to an Intune remediation profile.",
+        "Publish weekly device security score and trend delta.",
+    ]
+
+    return {
+        "run_at": datetime.now(timezone.utc).isoformat(),
+        "source_url": DEVICES_GUIDANCE_URL,
+        "zta_source_url": ZTA_SOURCE_URL,
+        "summary": {"total_controls": total, "high_priority": high, "medium_priority": medium},
+        "breakdown": {"high": high, "medium": medium, "low": low},
+        "controls": controls,
+        "ideas_to_add_more": ideas_to_add,
+    }
+

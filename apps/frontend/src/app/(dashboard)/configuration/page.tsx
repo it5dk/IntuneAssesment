@@ -1,6 +1,21 @@
+/*  BEGIN AUTODOC HEADER
+//  File: apps\frontend\src\app\(dashboard)\configuration\page.tsx
+//  Description: (edit inside USER NOTES below)
+// 
+//  BEGIN AUTODOC META
+//  Version: 0.0.0.3
+//  Last-Updated: 2026-02-19 00:30:35
+//  Managed-By: autosave.ps1
+//  END AUTODOC META
+// 
+//  BEGIN USER NOTES
+//  Your notes here. We will NEVER change this block.
+//  END USER NOTES
+ */ END AUTODOC HEADER
+
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { PageHeader } from "@/components/page-header";
@@ -33,12 +48,17 @@ function platformLabel(platform: string) {
 }
 
 export default function ConfigurationPage() {
+  const [activeModule, setActiveModule] = useState<"policies" | "settings">("policies");
+  const [settingsAction, setSettingsAction] = useState<"granular" | "conflict" | "optimization" | "comparison">("granular");
   const [searchQuery, setSearchQuery] = useState("");
   const [platformFilter, setPlatformFilter] = useState("");
+  const policiesRef = useRef<HTMLDivElement | null>(null);
+  const settingsRef = useRef<HTMLDivElement | null>(null);
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ["config-summary"],
     queryFn: api.getConfigSummary,
+    refetchInterval: activeModule === "policies" ? 15000 : false,
   });
 
   const { data: policiesData, isLoading: policiesLoading } = useQuery({
@@ -53,6 +73,19 @@ export default function ConfigurationPage() {
   const platforms = Object.keys(summary?.by_platform ?? {});
   const totalPolicies = summary?.total ?? 0;
   const typeCount = Object.keys(summary?.by_type ?? {}).length;
+  const compliancePolicyCount = policies.filter((p) => p.resource_type.toLowerCase().includes("compliance")).length;
+  const oldPolicyCount = policies.filter((p) => {
+    if (!p.last_modified) return false;
+    const dt = new Date(p.last_modified);
+    return dt < new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
+  }).length;
+  const overlapGroups = Object.entries(
+    policies.reduce<Record<string, number>>((acc, p) => {
+      const key = `${platformLabel(p.platform)} | ${p.resource_type.split(".").pop()}`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {})
+  ).filter(([, count]) => count > 1);
 
   return (
     <div className="space-y-8">
@@ -94,10 +127,19 @@ export default function ConfigurationPage() {
 
       {/* Feature cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="border-primary/30">
+        <button
+          className="text-left"
+          onClick={() => {
+            setActiveModule("policies");
+            policiesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        >
+        <Card className={`border-primary/30 transition-colors ${activeModule === "policies" ? "border-primary/70" : "hover:border-primary/40"}`}>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <Badge variant="default" className="text-[10px]">CORE</Badge>
+              <Badge variant={activeModule === "policies" ? "default" : "secondary"} className="text-[10px]">
+                {activeModule === "policies" ? "ACTIVE" : "CORE"}
+              </Badge>
             </div>
             <CardTitle className="text-lg">Policies</CardTitle>
             <CardDescription>Browse, search and analyze all Intune configuration and compliance policies across platforms.</CardDescription>
@@ -111,10 +153,20 @@ export default function ConfigurationPage() {
             </ul>
           </CardContent>
         </Card>
-        <Card className="border-primary/30">
+        </button>
+        <button
+          className="text-left"
+          onClick={() => {
+            setActiveModule("settings");
+            settingsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }}
+        >
+        <Card className={`border-primary/30 transition-colors ${activeModule === "settings" ? "border-primary/70" : "hover:border-primary/40"}`}>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <Badge variant="default" className="text-[10px]">CORE</Badge>
+              <Badge variant={activeModule === "settings" ? "default" : "secondary"} className="text-[10px]">
+                {activeModule === "settings" ? "ACTIVE" : "CORE"}
+              </Badge>
             </div>
             <CardTitle className="text-lg">Settings</CardTitle>
             <CardDescription>Drill down into individual policy settings with granular visibility into every configuration value.</CardDescription>
@@ -128,7 +180,146 @@ export default function ConfigurationPage() {
             </ul>
           </CardContent>
         </Card>
+        </button>
       </div>
+
+      {activeModule === "policies" && (
+        <Card ref={policiesRef}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5 text-primary" />
+              Policies Workspace
+            </CardTitle>
+            <CardDescription>Browse, search and analyze all Intune configuration and compliance policies across platforms.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <Card className="border-primary/20">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Full policy inventory</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">{totalPolicies} total policies discovered.</CardContent>
+              </Card>
+              <Card className="border-primary/20">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Compliance monitoring</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">{compliancePolicyCount} compliance policy objects in current results.</CardContent>
+              </Card>
+              <Card className="border-primary/20">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Platform analytics</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">{platforms.length} platforms with active policy coverage.</CardContent>
+              </Card>
+              <Card className="border-primary/20">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Snapshot comparison</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Compare configuration drift between snapshots.
+                  <div className="mt-2">
+                    <Link href="/compare" className="text-primary hover:underline text-xs">Open snapshot comparison</Link>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeModule === "settings" && (
+        <Card ref={settingsRef}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5 text-primary" />
+              Settings Workspace
+            </CardTitle>
+            <CardDescription>
+              Drill down into individual policy settings with granular visibility into every configuration value.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <button className="text-left" onClick={() => setSettingsAction("granular")}>
+              <Card className={`border-primary/20 transition-colors ${settingsAction === "granular" ? "border-primary/60" : "hover:border-primary/40"}`}>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Granular settings breakdown</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Open a policy to inspect normalized settings key-by-key and raw payload side-by-side.
+                </CardContent>
+              </Card>
+              </button>
+              <button className="text-left" onClick={() => setSettingsAction("conflict")}>
+              <Card className={`border-primary/20 transition-colors ${settingsAction === "conflict" ? "border-primary/60" : "hover:border-primary/40"}`}>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Conflict detection</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Detect overlapping controls by reviewing similar settings across policies and platforms.
+                </CardContent>
+              </Card>
+              </button>
+              <button className="text-left" onClick={() => setSettingsAction("optimization")}>
+              <Card className={`border-primary/20 transition-colors ${settingsAction === "optimization" ? "border-primary/60" : "hover:border-primary/40"}`}>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Optimization insights</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Spot redundant or outdated values and identify candidates for consolidation.
+                </CardContent>
+              </Card>
+              </button>
+              <button className="text-left" onClick={() => setSettingsAction("comparison")}>
+              <Card className={`border-primary/20 transition-colors ${settingsAction === "comparison" ? "border-primary/60" : "hover:border-primary/40"}`}>
+                <CardHeader className="pb-2"><CardTitle className="text-sm">Value comparison</CardTitle></CardHeader>
+                <CardContent className="text-sm text-muted-foreground">
+                  Use snapshot compare to validate value drift before and after changes.
+                </CardContent>
+              </Card>
+              </button>
+            </div>
+
+            {settingsAction === "granular" && (
+              <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground mb-2">Open policy settings</p>
+                {policies.slice(0, 5).map((p) => (
+                  <div key={p.id} className="py-1">
+                    <Link href={`/configuration/${p.id}`} className="text-primary hover:underline">
+                      {p.display_name}
+                    </Link>
+                  </div>
+                ))}
+                {policies.length > 5 && <p className="mt-2 text-xs">Showing 5 of {policies.length} policies.</p>}
+              </div>
+            )}
+            {settingsAction === "conflict" && (
+              <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground mb-2">Potential overlap groups</p>
+                {!overlapGroups.length ? (
+                  <p>No overlap groups detected in current filtered result.</p>
+                ) : (
+                  <div className="space-y-1">
+                    {overlapGroups.slice(0, 8).map(([k, c]) => (
+                      <div key={k} className="flex items-center justify-between">
+                        <span>{k}</span>
+                        <span className="font-medium">{c} policies</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {settingsAction === "optimization" && (
+              <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground mb-2">Optimization candidates</p>
+                <p>Policies not modified in 180+ days: <span className="font-medium text-foreground">{oldPolicyCount}</span></p>
+                <p className="mt-1">Potential overlap groups for consolidation: <span className="font-medium text-foreground">{overlapGroups.length}</span></p>
+              </div>
+            )}
+            {settingsAction === "comparison" && (
+              <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground mb-2">Value comparison</p>
+                <p>Run snapshot comparison to validate policy value drift before and after changes.</p>
+                <div className="mt-2">
+                  <Link href="/compare" className="text-primary hover:underline text-sm">Open snapshot comparison</Link>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-lg border p-3 text-sm text-muted-foreground">
+              Tip: select a policy from the list below to drill down into all settings, then use <span className="font-medium text-foreground">Compare</span> for value-level drift checks.
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Capability highlights */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -244,3 +435,4 @@ export default function ConfigurationPage() {
     </div>
   );
 }
+

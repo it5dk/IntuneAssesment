@@ -1,3 +1,18 @@
+""" BEGIN AUTODOC HEADER
+#  File: apps\backend\app\models\ignore_rule.py
+#  Description: (edit inside USER NOTES below)
+# 
+#  BEGIN AUTODOC META
+#  Version: 0.0.0.3
+#  Last-Updated: 2026-02-19 00:30:35
+#  Managed-By: autosave.ps1
+#  END AUTODOC META
+# 
+#  BEGIN USER NOTES
+#  Your notes here. We will NEVER change this block.
+#  END USER NOTES
+""" END AUTODOC HEADER
+
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import String, DateTime, ForeignKey
@@ -15,3 +30,4 @@ class IgnoreRule(Base):
     json_path_pattern: Mapped[str] = mapped_column(String(512), nullable=False)
     reason: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+

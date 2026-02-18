@@ -1,3 +1,18 @@
+<!--  BEGIN AUTODOC HEADER
+<!--  File: DRIFT_CONTROL_README.md
+<!--  Description: (edit inside USER NOTES below)
+<!-- 
+<!--  BEGIN AUTODOC META
+<!--  Version: 0.0.0.3
+<!--  Last-Updated: 2026-02-19 00:30:35
+<!--  Managed-By: autosave.ps1
+<!--  END AUTODOC META
+<!-- 
+<!--  BEGIN USER NOTES
+<!--  Your notes here. We will NEVER change this block.
+<!--  END USER NOTES
+<!--  END AUTODOC HEADER
+
 # Drift Control
 
 Configuration drift monitoring for Microsoft Entra ID and Microsoft Intune. Single-tenant, dark-themed dashboard for internal admins.
@@ -147,3 +162,4 @@ The MVP ships without user authentication. To add MSAL-based auth later:
 3. Add session middleware (JWT or server-side sessions)
 4. On frontend, add MSAL.js provider and protect routes
 5. Add `Authorization` header to API calls
+

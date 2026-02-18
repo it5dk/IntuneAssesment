@@ -1,3 +1,18 @@
+/*  BEGIN AUTODOC HEADER
+//  File: apps\frontend\src\app\(dashboard)\assistant\page.tsx
+//  Description: (edit inside USER NOTES below)
+// 
+//  BEGIN AUTODOC META
+//  Version: 0.0.0.3
+//  Last-Updated: 2026-02-19 00:30:35
+//  Managed-By: autosave.ps1
+//  END AUTODOC META
+// 
+//  BEGIN USER NOTES
+//  Your notes here. We will NEVER change this block.
+//  END USER NOTES
+ */ END AUTODOC HEADER
+
 "use client";
 
 import { useState } from "react";
@@ -9,6 +24,7 @@ import {
   type ManagedObject,
   type ValidationResult,
   type ZeroTrustPillar,
+  type ZeroTrustUserAssessment,
   type TopRiskUser,
   type UserRiskFactor,
 } from "@/lib/api";
@@ -38,7 +54,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-type TabView = "all" | "apps" | "groups" | "assessment" | "identity";
+type TabView = "all" | "apps" | "groups" | "assessment" | "identity" | "devices";
 type CollectionType = "apps" | "deviceConfigurations" | "deviceCompliancePolicies";
 
 const COLLECTION_LABELS: Record<CollectionType, string> = {
@@ -636,6 +652,13 @@ function AssignmentManagerPanel() {
     enabled: showLogs && !!selectedObject,
   });
 
+  const { data: assessment, isLoading: assessmentLoading, error: assessmentError, refetch: refetchAssessment } = useQuery({
+    queryKey: ["zero-trust-assessment", 50],
+    queryFn: () => api.getZeroTrustAssessment(50),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
   return (
     <div className="space-y-4">
       {/* Collection selector */}
@@ -837,6 +860,13 @@ function AssignmentManagerPanel() {
           }}
         />
       )}
+
+      <AssessmentDeepDiveSections
+        assessment={assessment}
+        isLoading={assessmentLoading}
+        error={assessmentError}
+        onRetry={() => refetchAssessment()}
+      />
     </div>
   );
 }
@@ -857,6 +887,7 @@ function PillarCard({
   const isAvailable = pillar.available;
   const score = pillar.score;
   const grade = pillar.grade;
+  const labelize = (key: string) => key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
     <Card className={`transition-colors ${!isAvailable ? "opacity-60" : ""}`}>
@@ -950,17 +981,29 @@ function PillarCard({
                       const dn = item.displayName ? String(item.displayName) : "";
                       const rn = item.roleName ? String(item.roleName) : "";
                       const upn = item.userPrincipalName ? String(item.userPrincipalName) : "";
+                      const uid = item.userId ? String(item.userId) : "";
                       const rl = item.riskLevel ? String(item.riskLevel) : "";
                       const mc = item.memberCount != null ? String(item.memberCount) : "";
                       const dsi = item.daysSinceSignIn != null ? String(item.daysSinceSignIn) : "";
                       const ct = item.consentType ? String(item.consentType) : "";
                       const rs = Array.isArray(item.risky_scopes) ? (item.risky_scopes as string[]).join(", ") : "";
+                      const members = Array.isArray(item.members) ? (item.members as Record<string, unknown>[]) : [];
+                      const roles = Array.isArray(item.roles) ? (item.roles as string[]) : [];
+                      const controls = Array.isArray(item.controls) ? (item.controls as string[]) : [];
+                      const primary = dn || rn || upn || uid;
+                      const extraFields = Object.entries(item).filter(([k, v]) => (
+                        ![
+                          "displayName", "roleName", "userPrincipalName", "userId", "riskLevel", "memberCount",
+                          "daysSinceSignIn", "consentType", "risky_scopes", "members", "roles", "controls", "isCritical",
+                          "phishing_resistant", "id",
+                        ].includes(k) && (typeof v === "string" || typeof v === "number" || typeof v === "boolean")
+                      ));
 
                       return (
                         <div key={idx} className="rounded-md bg-accent/30 px-3 py-1.5 text-[11px]">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {dn ? <span className="font-medium">{dn}</span> : null}
-                            {rn ? <span className="font-medium">{rn}</span> : null}
+                            {primary ? <span className="font-medium">{primary}</span> : null}
+                            {!primary && item.id ? <span className="font-medium">{String(item.id)}</span> : null}
                             {upn ? <span className="text-muted-foreground">{upn}</span> : null}
                             {rl ? (
                               <Badge variant={rl === "high" ? "danger" : rl === "medium" ? "warning" : "secondary"} className="text-[9px]">
@@ -978,6 +1021,51 @@ function PillarCard({
                             {ct ? <Badge variant="outline" className="text-[9px]">{ct}</Badge> : null}
                             {rs ? <span className="text-red-400 text-[10px]">{rs}</span> : null}
                           </div>
+                          {members.length > 0 && (
+                            <div className="mt-2 space-y-1 rounded bg-background/40 p-2">
+                              <p className="text-[10px] font-medium text-muted-foreground">Members ({members.length})</p>
+                              {members.slice(0, 8).map((m, mi) => {
+                                const mdn = m.displayName ? String(m.displayName) : "";
+                                const mupn = m.userPrincipalName ? String(m.userPrincipalName) : "";
+                                const mid = m.id ? String(m.id) : "";
+                                return (
+                                  <div key={mi} className="flex items-center justify-between gap-2 text-[10px]">
+                                    <span className="font-medium truncate">{mdn || mupn || mid}</span>
+                                    {mupn ? <span className="text-muted-foreground truncate">{mupn}</span> : null}
+                                  </div>
+                                );
+                              })}
+                              {members.length > 8 && (
+                                <p className="text-[10px] text-muted-foreground">...and {members.length - 8} more</p>
+                              )}
+                            </div>
+                          )}
+                          {roles.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {roles.slice(0, 8).map((role) => (
+                                <Badge key={role} variant="secondary" className="text-[9px]">{role}</Badge>
+                              ))}
+                              {roles.length > 8 && <span className="text-[10px] text-muted-foreground">+{roles.length - 8} more</span>}
+                            </div>
+                          )}
+                          {controls.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {controls.slice(0, 8).map((c) => (
+                                <Badge key={c} variant="outline" className="text-[9px]">{c}</Badge>
+                              ))}
+                              {controls.length > 8 && <span className="text-[10px] text-muted-foreground">+{controls.length - 8} more</span>}
+                            </div>
+                          )}
+                          {extraFields.length > 0 && (
+                            <div className="mt-2 grid grid-cols-1 gap-1 text-[10px] text-muted-foreground">
+                              {extraFields.map(([k, v]) => (
+                                <div key={k} className="flex items-center justify-between gap-2">
+                                  <span>{labelize(k)}</span>
+                                  <span className="text-foreground">{typeof v === "boolean" ? (v ? "Yes" : "No") : String(v)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -995,16 +1083,284 @@ function PillarCard({
   );
 }
 
+function AssessmentDeepDiveSections({
+  assessment,
+  isLoading,
+  error,
+  onRetry,
+}: {
+  assessment: Awaited<ReturnType<typeof api.getZeroTrustAssessment>> | undefined;
+  isLoading: boolean;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  const [expandedUser, setExpandedUser] = useState<string | null>(null);
+  const pillarOrder = ["user_risk", "mfa_coverage", "privilege_exposure", "ca_coverage", "access_footprint", "account_lifecycle", "group_risk"];
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Layers className="h-5 w-5 text-primary" />
+          Security Pillars
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-44 w-full" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 p-4">
+          <p className="text-sm text-red-400">
+            {error instanceof Error ? error.message : "Failed to load Security Pillars and Top Risk Users."}
+          </p>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!assessment) return null;
+
+  return (
+    <div className="space-y-6">
+      {!assessment.permissions_status.all_granted && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-amber-400">Missing Graph API Permissions</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Some pillars require additional permissions: {assessment.permissions_status.missing.join(", ")}
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {assessment.permissions_status.checks.map((c) => (
+                <Badge
+                  key={c.permission}
+                  variant={c.status === "granted" ? "success" : c.status === "denied" ? "danger" : "warning"}
+                  className="text-[10px]"
+                >
+                  {c.permission}: {c.status}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Card className="border-2">
+        <CardContent className="p-6">
+          <div className="flex flex-col sm:flex-row items-center gap-6">
+            <div className="flex flex-col items-center">
+              <div className={`relative flex items-center justify-center h-28 w-28 rounded-full border-4 ${
+                assessment.composite_grade === "A" ? "border-emerald-500" :
+                assessment.composite_grade === "B" ? "border-blue-500" :
+                assessment.composite_grade === "C" ? "border-amber-500" :
+                assessment.composite_grade === "D" ? "border-orange-500" :
+                assessment.composite_grade === "F" ? "border-red-500" : "border-muted"
+              }`}>
+                <div className="text-center">
+                  <p className={`text-4xl font-black ${gradeColor(assessment.composite_grade)}`}>
+                    {assessment.composite_grade}
+                  </p>
+                  <p className="text-sm font-bold text-muted-foreground">{assessment.composite_score}/100</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Composite Score</p>
+            </div>
+
+            <div className="flex-1 space-y-3">
+              <div>
+                <h3 className="text-xl font-bold flex items-center gap-2">
+                  <ShieldCheck className="h-6 w-6 text-primary" />
+                  Zero Trust Identity Assessment
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {assessment.tenant_user_count} users assessed across 7 security pillars
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-4 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">Duration:</span>
+                  <span className="font-medium">{assessment.assessment_duration_seconds}s</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">Users:</span>
+                  <span className="font-medium">{assessment.tenant_user_count}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-muted-foreground">Time:</span>
+                  <span className="font-medium">{new Date(assessment.assessment_time).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                Re-run Assessment
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div>
+        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <Layers className="h-5 w-5 text-primary" />
+          Security Pillars
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {pillarOrder.map((key) => {
+            const pillar = assessment.pillars[key];
+            if (!pillar) return null;
+            return <PillarCard key={key} pillarKey={key} pillar={pillar} />;
+          })}
+        </div>
+      </div>
+
+      {assessment.top_risk_users.length > 0 && (
+        <div>
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <UserCog className="h-5 w-5 text-primary" />
+            Top Risk Users ({assessment.top_risk_users.length})
+          </h3>
+          <Card>
+            <CardContent className="p-0">
+              <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[11px] font-medium text-muted-foreground border-b">
+                <span className="w-6 shrink-0"></span>
+                <span className="w-[220px] shrink-0">User</span>
+                <span className="w-24 text-center">Score</span>
+                <span className="w-16 text-center">Grade</span>
+                <span className="w-20 text-center">Type</span>
+                <span className="w-20 text-center">Status</span>
+                <span className="flex-1">Risk Factors</span>
+                <span className="w-5 shrink-0"></span>
+              </div>
+
+              <div className="divide-y max-h-[600px] overflow-y-auto">
+                {assessment.top_risk_users.map((user, idx) => {
+                  const userGrade = user.risk_score <= 20 ? "A" : user.risk_score <= 40 ? "B" : user.risk_score <= 60 ? "C" : user.risk_score <= 80 ? "D" : "F";
+                  const isExpanded = expandedUser === user.id;
+
+                  return (
+                    <div key={user.id}>
+                      <button
+                        onClick={() => setExpandedUser(isExpanded ? null : user.id)}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-accent/20 transition-colors"
+                      >
+                        <span className="w-6 text-xs text-muted-foreground font-mono shrink-0">{idx + 1}.</span>
+                        <div className="w-[220px] shrink-0 min-w-0">
+                          <p className="text-sm font-medium truncate">{user.displayName}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{user.userPrincipalName}</p>
+                        </div>
+                        <div className="w-24 text-center hidden md:block">
+                          <div className="inline-flex items-center gap-1.5">
+                            <div className="h-1.5 w-14 rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full rounded-full ${scoreBarColor(user.risk_score)}`} style={{ width: `${Math.max(4, user.risk_score)}%` }} />
+                            </div>
+                            <span className={`text-xs font-bold ${gradeColor(userGrade)}`}>{user.risk_score}</span>
+                          </div>
+                        </div>
+                        <div className="w-16 text-center hidden md:block">
+                          <span className={`text-sm font-black ${gradeColor(userGrade)}`}>{userGrade}</span>
+                        </div>
+                        <div className="w-20 text-center hidden md:block">
+                          <Badge variant={user.userType === "Guest" ? "warning" : "secondary"} className="text-[10px]">{user.userType}</Badge>
+                        </div>
+                        <div className="w-20 text-center hidden md:block">
+                          <Badge variant={user.accountEnabled ? "success" : "danger"} className="text-[10px]">{user.accountEnabled ? "Active" : "Disabled"}</Badge>
+                        </div>
+                        <div className="flex-1 hidden md:flex items-center gap-1 flex-wrap">
+                          {user.risk_factors.slice(0, 3).map((f, fi) => (
+                            <Badge key={fi} variant={severityBadgeVariant(f.severity)} className="text-[9px]">
+                              {f.factor.length > 30 ? f.factor.slice(0, 30) + "..." : f.factor}
+                            </Badge>
+                          ))}
+                          {user.risk_factors.length > 3 && <span className="text-[10px] text-muted-foreground">+{user.risk_factors.length - 3}</span>}
+                        </div>
+                        <div className="shrink-0">{isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}</div>
+                      </button>
+
+                      {!isExpanded && (
+                        <div className="flex items-center gap-2 px-4 pb-2 md:hidden">
+                          <span className={`text-sm font-black ${gradeColor(userGrade)}`}>{userGrade}</span>
+                          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+                            <div className={`h-full rounded-full ${scoreBarColor(user.risk_score)}`} style={{ width: `${Math.max(4, user.risk_score)}%` }} />
+                          </div>
+                          <span className="text-xs font-bold">{user.risk_score}</span>
+                          <Badge variant={user.accountEnabled ? "success" : "danger"} className="text-[9px]">{user.accountEnabled ? "Active" : "Off"}</Badge>
+                        </div>
+                      )}
+
+                      {isExpanded && (
+                        <div className="border-t bg-accent/10 px-4 py-3 space-y-3">
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
+                            <div><p className="text-muted-foreground">Risk Score</p><p className={`text-lg font-black mt-0.5 ${gradeColor(userGrade)}`}>{user.risk_score}/100</p></div>
+                            <div><p className="text-muted-foreground">Grade</p><p className={`text-lg font-black mt-0.5 ${gradeColor(userGrade)}`}>{userGrade}</p></div>
+                            <div><p className="text-muted-foreground">Account Type</p><p className="font-medium mt-0.5">{user.userType}</p></div>
+                            <div>
+                              <p className="text-muted-foreground">Account Status</p>
+                              <p className={`font-medium mt-0.5 ${user.accountEnabled ? "text-emerald-400" : "text-red-400"}`}>{user.accountEnabled ? "Enabled" : "Disabled"}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground mb-2">Risk Factors ({user.risk_factors.length})</p>
+                            <div className="space-y-1.5">
+                              {user.risk_factors.map((factor, fi) => (
+                                <div key={fi} className="flex items-center gap-3 rounded-md bg-accent/50 px-3 py-2">
+                                  <div className={`h-2 w-2 rounded-full shrink-0 ${factor.severity === "critical" ? "bg-red-500" : factor.severity === "high" ? "bg-orange-500" : factor.severity === "medium" ? "bg-amber-500" : "bg-blue-500"}`} />
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-medium">{factor.factor}</p>
+                                    <p className="text-[10px] text-muted-foreground">Pillar: {PILLAR_CONFIG[factor.pillar]?.label || factor.pillar}</p>
+                                  </div>
+                                  <Badge variant={severityBadgeVariant(factor.severity)} className="text-[9px] shrink-0">{factor.severity}</Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="text-xs">
+                            <p className="text-muted-foreground">User ID</p>
+                            <p className="font-mono text-[11px] mt-0.5 select-all">{user.id}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Zero Trust Assessment Panel ─────────────────────────────────────────────
 
 function ZeroTrustAssessmentPanel() {
-  const [expandedUser, setExpandedUser] = useState<string | null>(null);
-
+  const [userSearch, setUserSearch] = useState("");
+  const [userFilter, setUserFilter] = useState<"all" | "enabled" | "disabled" | "guests" | "security_risks" | "stale">("all");
+  const [selectedUserForAssessment, setSelectedUserForAssessment] = useState<TopRiskUser | null>(null);
   const { data: assessment, isLoading, error, refetch } = useQuery({
-    queryKey: ["zero-trust-assessment"],
-    queryFn: () => api.getZeroTrustAssessment(50),
+    queryKey: ["zero-trust-assessment", 5000],
+    queryFn: () => api.getZeroTrustAssessment(5000),
     staleTime: 5 * 60_000, // 5 min stale time (expensive call)
     retry: 1,
+  });
+  const userAssessmentMutation = useMutation({
+    mutationFn: (userKey: string) => api.getZeroTrustUserAssessment(userKey, 30),
   });
 
   if (isLoading) {
@@ -1043,274 +1399,320 @@ function ZeroTrustAssessmentPanel() {
 
   if (!assessment) return null;
 
-  const pillarOrder = ["user_risk", "mfa_coverage", "privilege_exposure", "ca_coverage", "access_footprint", "account_lifecycle", "group_risk"];
+  const allUsers = assessment.top_risk_users;
+  const mfaSummary = (assessment.pillars.mfa_coverage?.summary || {}) as Record<string, unknown>;
+  const accountSummary = (assessment.pillars.account_lifecycle?.summary || {}) as Record<string, unknown>;
+  const staleUsers = ((assessment.pillars.account_lifecycle?.details || {}) as Record<string, unknown>).stale_users as Record<string, unknown>[] | undefined;
+  const uncoveredUsers = ((assessment.pillars.mfa_coverage?.details || {}) as Record<string, unknown>).uncovered_users as Record<string, unknown>[] | undefined;
+  const staleMap = new Map<string, string>();
+  (staleUsers || []).forEach((u) => {
+    const id = String(u.id || "");
+    const lastSignIn = String(u.lastSignIn || "");
+    if (id) staleMap.set(id, lastSignIn);
+  });
+  const uncoveredSet = new Set((uncoveredUsers || []).map((u) => String(u.id || "")));
+
+  const enabledCount = allUsers.filter((u) => u.accountEnabled).length;
+  const disabledCount = allUsers.length - enabledCount;
+  const highRiskCount = allUsers.filter((u) => u.risk_score >= 80).length;
+  const staleCount = Number(accountSummary.stale_accounts_90d || 0);
+  const mfaDisabledCount = Number(mfaSummary.users_not_covered || uncoveredSet.size || 0);
+  const mfaEnabledCount = Math.max(0, allUsers.length - mfaDisabledCount);
+
+  const users = allUsers
+    .filter((u) => {
+      if (!userSearch) return true;
+      const q = userSearch.toLowerCase();
+      return (
+        (u.displayName || "").toLowerCase().includes(q) ||
+        (u.userPrincipalName || "").toLowerCase().includes(q)
+      );
+    })
+    .filter((u) => {
+      const isStale = staleMap.has(u.id);
+      const hasSecurityRisk = u.risk_score >= 60;
+      if (userFilter === "enabled") return u.accountEnabled;
+      if (userFilter === "disabled") return !u.accountEnabled;
+      if (userFilter === "guests") return u.userType === "Guest";
+      if (userFilter === "security_risks") return hasSecurityRisk;
+      if (userFilter === "stale") return isStale;
+      return true;
+    })
+    .sort((a, b) => b.risk_score - a.risk_score);
 
   return (
     <div className="space-y-6">
-      {/* Permission warnings */}
-      {!assessment.permissions_status.all_granted && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-          <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-medium text-amber-400">Missing Graph API Permissions</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Some pillars require additional permissions: {assessment.permissions_status.missing.join(", ")}
-            </p>
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {assessment.permissions_status.checks.map((c) => (
-                <Badge
-                  key={c.permission}
-                  variant={c.status === "granted" ? "success" : c.status === "denied" ? "danger" : "warning"}
-                  className="text-[10px]"
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total users</p>
+            <p className="text-3xl font-black mt-1">{allUsers.length}</p>
+            <div className="mt-2 rounded-full border px-3 py-1.5 text-xs text-muted-foreground">
+              Secure score: {assessment.composite_score >= 0 ? assessment.composite_score : "-"}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Enabled</p>
+            <p className="text-3xl font-black mt-1">{enabledCount}</p>
+            <p className="text-xs text-muted-foreground mt-2">Disabled: {disabledCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">MFA enabled</p>
+            <p className="text-3xl font-black mt-1">{mfaEnabledCount}</p>
+            <p className="text-xs text-muted-foreground mt-2">MFA disabled: {mfaDisabledCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Risks & stale</p>
+            <p className="text-3xl font-black mt-1">{highRiskCount + staleCount}</p>
+            <p className="text-xs text-muted-foreground mt-2">Stale (90d+): {staleCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="text-lg">Users</CardTitle>
+              <CardDescription>Showing {users.length} of {allUsers.length} users</CardDescription>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {[
+                ["all", "All"],
+                ["enabled", "Enabled"],
+                ["disabled", "Disabled"],
+                ["guests", "Guests"],
+                ["security_risks", "Security Risks"],
+                ["stale", "Stale"],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setUserFilter(key as "all" | "enabled" | "disabled" | "guests" | "security_risks" | "stale")}
+                  className={`rounded-full border px-3 py-1 text-xs ${
+                    userFilter === key ? "border-primary text-primary" : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  {c.permission}: {c.status}
-                </Badge>
+                  {label}
+                </button>
               ))}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Composite Score Card */}
-      <Card className="border-2">
-        <CardContent className="p-6">
-          <div className="flex flex-col sm:flex-row items-center gap-6">
-            {/* Score gauge */}
-            <div className="flex flex-col items-center">
-              <div className={`relative flex items-center justify-center h-28 w-28 rounded-full border-4 ${
-                assessment.composite_grade === "A" ? "border-emerald-500" :
-                assessment.composite_grade === "B" ? "border-blue-500" :
-                assessment.composite_grade === "C" ? "border-amber-500" :
-                assessment.composite_grade === "D" ? "border-orange-500" :
-                assessment.composite_grade === "F" ? "border-red-500" : "border-muted"
-              }`}>
-                <div className="text-center">
-                  <p className={`text-4xl font-black ${gradeColor(assessment.composite_grade)}`}>
-                    {assessment.composite_grade}
-                  </p>
-                  <p className="text-sm font-bold text-muted-foreground">{assessment.composite_score}/100</p>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">Composite Score</p>
+          <div className="relative max-w-md mt-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              className="w-full rounded-lg border bg-background pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Search name or UPN..."
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+            />
+          </div>
+          <div className="text-xs text-muted-foreground">Sort: Risk ↓</div>
+        </CardHeader>
+        <CardContent>
+          {!users.length ? (
+            <p className="text-sm text-muted-foreground">No users match your search.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-xs text-muted-foreground">
+                    <th className="py-2 text-left font-medium">Name</th>
+                    <th className="py-2 text-left font-medium">UPN</th>
+                    <th className="py-2 text-left font-medium">Enabled</th>
+                    <th className="py-2 text-left font-medium">Type</th>
+                    <th className="py-2 text-left font-medium">Source</th>
+                    <th className="py-2 text-left font-medium">License</th>
+                    <th className="py-2 text-left font-medium">MFA</th>
+                    <th className="py-2 text-left font-medium">Pwd expires</th>
+                    <th className="py-2 text-left font-medium">Pwd length set</th>
+                    <th className="py-2 text-left font-medium">Risk factors</th>
+                    <th className="py-2 text-left font-medium">Created</th>
+                    <th className="py-2 text-left font-medium">Risk</th>
+                    <th className="py-2 text-left font-medium">Last sign-in</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((user) => {
+                    const riskLevel = user.risk_score >= 80 ? "High" : user.risk_score >= 60 ? "Medium" : user.risk_score >= 30 ? "Low" : "None";
+                    const isStale = staleMap.has(user.id);
+                    const lastSignIn = staleMap.get(user.id) || "-";
+                    const mfaEnabled = !uncoveredSet.has(user.id);
+                    return (
+                      <tr key={user.id} className="border-b/50">
+                        <td className="py-2 pr-3 font-medium">{user.displayName || "N/A"}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">{user.userPrincipalName || "-"}</td>
+                        <td className="py-2 pr-3">{user.accountEnabled ? "Yes" : "No"}</td>
+                        <td className="py-2 pr-3">{user.userType}</td>
+                        <td className="py-2 pr-3">{user.source === "synced" ? "Synced" : "Cloud-only"}</td>
+                        <td className="py-2 pr-3">{user.licenses?.length ? user.licenses.join(", ") : "None"}</td>
+                        <td className="py-2 pr-3">{mfaEnabled ? "Enabled" : "Disabled"}</td>
+                        <td className="py-2 pr-3">
+                          {user.password_expires_on && user.password_expires_on.includes("T")
+                            ? new Date(user.password_expires_on).toLocaleDateString()
+                            : (user.password_expires_on || "Policy-based")}
+                        </td>
+                        <td className="py-2 pr-3">{user.password_length_set || "Policy-based"}</td>
+                        <td className="py-2 pr-3">{user.risk_factor_count ?? user.risk_factors.length}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">
+                          {user.created_date_time ? new Date(user.created_date_time).toLocaleDateString() : "-"}
+                        </td>
+                        <td className="py-2 pr-3">{riskLevel} ({user.risk_score})</td>
+                        <td className="py-2 pr-3 text-muted-foreground">
+                          <div className="flex items-center justify-between gap-2">
+                            <span>
+                              {user.last_sign_in
+                                ? new Date(user.last_sign_in).toLocaleString()
+                                : (lastSignIn === "-" ? "-" : new Date(lastSignIn).toLocaleString())}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedUserForAssessment(user);
+                                userAssessmentMutation.mutate(user.id);
+                              }}
+                            >
+                              Assess
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
+          )}
+        </CardContent>
+      </Card>
 
-            {/* Assessment info */}
-            <div className="flex-1 space-y-3">
-              <div>
-                <h3 className="text-xl font-bold flex items-center gap-2">
-                  <ShieldCheck className="h-6 w-6 text-primary" />
-                  Zero Trust Identity Assessment
-                </h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {assessment.tenant_user_count} users assessed across 7 security pillars
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-4 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-muted-foreground">Duration:</span>
-                  <span className="font-medium">{assessment.assessment_duration_seconds}s</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-muted-foreground">Users:</span>
-                  <span className="font-medium">{assessment.tenant_user_count}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <Info className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="text-muted-foreground">Time:</span>
-                  <span className="font-medium">{new Date(assessment.assessment_time).toLocaleString()}</span>
-                </div>
-              </div>
-
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                Re-run Assessment
-              </Button>
+      <Dialog
+        open={!!selectedUserForAssessment}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedUserForAssessment(null);
+            userAssessmentMutation.reset();
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              User Assessment: {selectedUserForAssessment?.displayName || selectedUserForAssessment?.userPrincipalName || "User"}
+            </DialogTitle>
+          </DialogHeader>
+          {userAssessmentMutation.isPending && (
+            <div className="py-8 text-center">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-3 text-primary" />
+              <p className="text-sm text-muted-foreground">Collecting Graph data and computing weighted risk score...</p>
             </div>
+          )}
+          {userAssessmentMutation.error && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400">
+              {userAssessmentMutation.error instanceof Error ? userAssessmentMutation.error.message : "Failed to assess user."}
+            </div>
+          )}
+          {userAssessmentMutation.data && (
+            <UserAssessmentDetailsPanel data={userAssessmentMutation.data as ZeroTrustUserAssessment} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function UserAssessmentDetailsPanel({ data }: { data: ZeroTrustUserAssessment }) {
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Overall Risk Score</p>
+              <p className="text-3xl font-black">{data.risk_score}/100</p>
+            </div>
+            <Badge variant={data.risk_score >= 80 ? "danger" : data.risk_score >= 60 ? "warning" : "success"}>
+              {data.risk_score >= 80 ? "High" : data.risk_score >= 60 ? "Medium" : "Low"}
+            </Badge>
           </div>
         </CardContent>
       </Card>
 
-      {/* Pillar Score Cards */}
-      <div>
-        <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <Layers className="h-5 w-5 text-primary" />
-          Security Pillars
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {pillarOrder.map((key) => {
-            const pillar = assessment.pillars[key];
-            if (!pillar) return null;
-            return <PillarCard key={key} pillarKey={key} pillar={pillar} />;
-          })}
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Goals</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-1.5 text-sm text-muted-foreground">
+            {data.goals.map((g) => (
+              <li key={g} className="flex items-start gap-2">
+                <ChevronRight className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                <span>{g}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
 
-      {/* Top Risk Users Table */}
-      {assessment.top_risk_users.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            <UserCog className="h-5 w-5 text-primary" />
-            Top Risk Users ({assessment.top_risk_users.length})
-          </h3>
-          <Card>
-            <CardContent className="p-0">
-              {/* Table header */}
-              <div className="hidden md:flex items-center gap-3 px-4 py-2.5 text-[11px] font-medium text-muted-foreground border-b">
-                <span className="w-6 shrink-0"></span>
-                <span className="w-[220px] shrink-0">User</span>
-                <span className="w-24 text-center">Score</span>
-                <span className="w-16 text-center">Grade</span>
-                <span className="w-20 text-center">Type</span>
-                <span className="w-20 text-center">Status</span>
-                <span className="flex-1">Risk Factors</span>
-                <span className="w-5 shrink-0"></span>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Weighted Pillars</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {Object.entries(data.pillars).map(([k, v]) => (
+            <div key={k} className="rounded border p-2.5 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{k.replace(/_/g, " ")}</span>
+                <span>{v.score}/{v.max}</span>
               </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
-              <div className="divide-y max-h-[600px] overflow-y-auto">
-                {assessment.top_risk_users.map((user, idx) => {
-                  const userGrade = user.risk_score <= 20 ? "A" : user.risk_score <= 40 ? "B" : user.risk_score <= 60 ? "C" : user.risk_score <= 80 ? "D" : "F";
-                  const isExpanded = expandedUser === user.id;
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">High-Risk Conditions</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!data.high_risk_conditions.length ? (
+            <p className="text-sm text-muted-foreground">No critical compound conditions detected.</p>
+          ) : (
+            <ul className="space-y-1.5 text-sm text-muted-foreground">
+              {data.high_risk_conditions.map((c) => (
+                <li key={c} className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 text-amber-400 shrink-0" />
+                  <span>{c}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
-                  return (
-                    <div key={user.id}>
-                      <button
-                        onClick={() => setExpandedUser(isExpanded ? null : user.id)}
-                        className="flex items-center gap-3 w-full px-4 py-3 text-left hover:bg-accent/20 transition-colors"
-                      >
-                        <span className="w-6 text-xs text-muted-foreground font-mono shrink-0">
-                          {idx + 1}.
-                        </span>
-                        <div className="w-[220px] shrink-0 min-w-0">
-                          <p className="text-sm font-medium truncate">{user.displayName}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">{user.userPrincipalName}</p>
-                        </div>
-                        <div className="w-24 text-center hidden md:block">
-                          <div className="inline-flex items-center gap-1.5">
-                            <div className="h-1.5 w-14 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${scoreBarColor(user.risk_score)}`}
-                                style={{ width: `${Math.max(4, user.risk_score)}%` }}
-                              />
-                            </div>
-                            <span className={`text-xs font-bold ${gradeColor(userGrade)}`}>{user.risk_score}</span>
-                          </div>
-                        </div>
-                        <div className="w-16 text-center hidden md:block">
-                          <span className={`text-sm font-black ${gradeColor(userGrade)}`}>{userGrade}</span>
-                        </div>
-                        <div className="w-20 text-center hidden md:block">
-                          <Badge variant={user.userType === "Guest" ? "warning" : "secondary"} className="text-[10px]">
-                            {user.userType}
-                          </Badge>
-                        </div>
-                        <div className="w-20 text-center hidden md:block">
-                          <Badge variant={user.accountEnabled ? "success" : "danger"} className="text-[10px]">
-                            {user.accountEnabled ? "Active" : "Disabled"}
-                          </Badge>
-                        </div>
-                        <div className="flex-1 hidden md:flex items-center gap-1 flex-wrap">
-                          {user.risk_factors.slice(0, 3).map((f, fi) => (
-                            <Badge key={fi} variant={severityBadgeVariant(f.severity)} className="text-[9px]">
-                              {f.factor.length > 30 ? f.factor.slice(0, 30) + "..." : f.factor}
-                            </Badge>
-                          ))}
-                          {user.risk_factors.length > 3 && (
-                            <span className="text-[10px] text-muted-foreground">+{user.risk_factors.length - 3}</span>
-                          )}
-                        </div>
-                        <div className="shrink-0">
-                          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        </div>
-                      </button>
-
-                      {/* Mobile score info */}
-                      {!isExpanded && (
-                        <div className="flex items-center gap-2 px-4 pb-2 md:hidden">
-                          <span className={`text-sm font-black ${gradeColor(userGrade)}`}>{userGrade}</span>
-                          <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${scoreBarColor(user.risk_score)}`}
-                              style={{ width: `${Math.max(4, user.risk_score)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs font-bold">{user.risk_score}</span>
-                          <Badge variant={user.accountEnabled ? "success" : "danger"} className="text-[9px]">
-                            {user.accountEnabled ? "Active" : "Off"}
-                          </Badge>
-                        </div>
-                      )}
-
-                      {/* Expanded risk factors */}
-                      {isExpanded && (
-                        <div className="border-t bg-accent/10 px-4 py-3 space-y-3">
-                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
-                            <div>
-                              <p className="text-muted-foreground">Risk Score</p>
-                              <p className={`text-lg font-black mt-0.5 ${gradeColor(userGrade)}`}>{user.risk_score}/100</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Grade</p>
-                              <p className={`text-lg font-black mt-0.5 ${gradeColor(userGrade)}`}>{userGrade}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Account Type</p>
-                              <p className="font-medium mt-0.5">{user.userType}</p>
-                            </div>
-                            <div>
-                              <p className="text-muted-foreground">Account Status</p>
-                              <p className={`font-medium mt-0.5 ${user.accountEnabled ? "text-emerald-400" : "text-red-400"}`}>
-                                {user.accountEnabled ? "Enabled" : "Disabled"}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground mb-2">
-                              Risk Factors ({user.risk_factors.length})
-                            </p>
-                            <div className="space-y-1.5">
-                              {user.risk_factors.map((factor, fi) => (
-                                <div
-                                  key={fi}
-                                  className="flex items-center gap-3 rounded-md bg-accent/50 px-3 py-2"
-                                >
-                                  <div className={`h-2 w-2 rounded-full shrink-0 ${
-                                    factor.severity === "critical" ? "bg-red-500" :
-                                    factor.severity === "high" ? "bg-orange-500" :
-                                    factor.severity === "medium" ? "bg-amber-500" :
-                                    "bg-blue-500"
-                                  }`} />
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium">{factor.factor}</p>
-                                    <p className="text-[10px] text-muted-foreground">
-                                      Pillar: {PILLAR_CONFIG[factor.pillar]?.label || factor.pillar}
-                                    </p>
-                                  </div>
-                                  <Badge variant={severityBadgeVariant(factor.severity)} className="text-[9px] shrink-0">
-                                    {factor.severity}
-                                  </Badge>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="text-xs">
-                            <p className="text-muted-foreground">User ID</p>
-                            <p className="font-mono text-[11px] mt-0.5 select-all">{user.id}</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Remediation Checklist</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-1.5 text-sm text-muted-foreground">
+            {data.remediation_checklist.map((i, idx) => (
+              <li key={`${i.priority}-${idx}`} className="flex items-start gap-2">
+                <Badge variant={i.priority === "high" ? "danger" : i.priority === "medium" ? "warning" : "secondary"} className="mt-0.5">
+                  {i.priority}
+                </Badge>
+                <span>{i.action}</span>
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -1427,6 +1829,118 @@ function IdentityGuidancePanel() {
   );
 }
 
+function DevicesGuidancePanel() {
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: ["devices-guidance-run"],
+    queryFn: api.getDevicesRun,
+    enabled: false,
+  });
+
+  const runData = data as IdentityRunResponse | undefined;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            Devices Guidance Runner
+          </CardTitle>
+          <CardDescription>
+            Run a checklist aligned to Microsoft Intune Zero Trust device security guidance.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => refetch()} disabled={isFetching}>
+              {isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+              {isFetching ? "Running..." : "Run Devices Check"}
+            </Button>
+            <a href="https://learn.microsoft.com/en-us/intune/intune-service/protect/zero-trust-configure-security?toc=%2Fsecurity%2Fzero-trust%2Fassessment%2Ftoc.json&bc=%2Fsecurity%2Fzero-trust%2Fassessment%2Ftoc.json" target="_blank" rel="noreferrer">
+              <Button variant="outline">
+                Open Intune Guidance
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </a>
+          </div>
+          {error && (
+            <p className="text-sm text-red-400">
+              {error instanceof Error ? error.message : "Failed to run devices check."}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {runData && (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-muted-foreground">Total Controls</p>
+                <p className="text-2xl font-bold">{runData.summary.total_controls}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-muted-foreground">High Priority</p>
+                <p className="text-2xl font-bold text-red-400">{runData.summary.high_priority}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-muted-foreground">Medium Priority</p>
+                <p className="text-2xl font-bold text-amber-400">{runData.summary.medium_priority}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Device Controls</CardTitle>
+              <CardDescription>Run time: {new Date(runData.run_at).toLocaleString()}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {runData.controls.map((theme) => (
+                <div key={theme.theme} className="rounded-lg border p-4">
+                  <p className="font-medium">{theme.theme}</p>
+                  <div className="mt-3 space-y-2">
+                    {theme.checks.map((item) => (
+                      <div key={`${theme.theme}-${item.control}`} className="flex items-center justify-between gap-3 rounded-md bg-accent/40 p-2 text-xs">
+                        <span>{item.control}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant={item.priority === "high" ? "danger" : "warning"}>{item.priority}</Badge>
+                          <Badge variant="secondary">{item.license}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Ideas To Add More</CardTitle>
+              <CardDescription>Suggested improvements for your assistant and device operations.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                {runData.ideas_to_add_more.map((idea) => (
+                  <li key={idea} className="flex items-start gap-2">
+                    <ChevronRight className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>{idea}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function AssistantPage() {
@@ -1494,7 +2008,7 @@ export default function AssistantPage() {
       </div>
 
       {/* Tab selector cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-7">
         <button onClick={() => setTab("all")} className="text-left">
           <Card className={`h-full transition-colors ${tab === "all" ? "border-primary/50" : "hover:border-primary/30"}`}>
             <CardHeader className="pb-3">
@@ -1603,6 +2117,27 @@ export default function AssistantPage() {
             </CardContent>
           </Card>
         </button>
+
+        <button onClick={() => setTab("devices")} className="text-left">
+          <Card className={`h-full transition-colors ${tab === "devices" ? "border-primary/50" : "hover:border-primary/30"}`}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Badge variant={tab === "devices" ? "default" : "secondary"} className="text-[10px]">
+                  {tab === "devices" ? "ACTIVE" : "RUN"}
+                </Badge>
+              </div>
+              <CardTitle className="text-lg">Devices</CardTitle>
+              <CardDescription>Run Microsoft Intune Zero Trust device security guidance checks.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2 text-xs text-muted-foreground">
+                <li className="flex items-center gap-2"><Shield className="h-3.5 w-3.5 text-emerald-400" /> Device hardening baseline checks</li>
+                <li className="flex items-center gap-2"><Target className="h-3.5 w-3.5 text-amber-400" /> Prioritized remediation focus</li>
+                <li className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-primary" /> Run + open Intune guidance</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </button>
       </div>
 
       {/* Search + filters (only for apps and groups tabs) */}
@@ -1696,6 +2231,8 @@ export default function AssistantPage() {
         <ZeroTrustAssessmentPanel />
       ) : tab === "identity" ? (
         <IdentityGuidancePanel />
+      ) : tab === "devices" ? (
+        <DevicesGuidancePanel />
       ) : isLoading ? (
         <div className="space-y-3">
           {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
@@ -1801,3 +2338,4 @@ export default function AssistantPage() {
     </div>
   );
 }
+

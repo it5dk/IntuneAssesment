@@ -179,6 +179,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ snapshot_a_id, snapshot_b_id, resource_id }),
     }),
+  compareTenants: (data: CompareTenantsRequest) =>
+    request<CompareTenantsResponse>("/compare/tenants", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 
   // Configuration
   getConfigPolicies: (params?: { platform?: string; search?: string }) => {
@@ -250,7 +255,10 @@ export const api = {
   // Zero Trust Assessment
   getZeroTrustAssessment: (topUsers?: number) =>
     request<ZeroTrustAssessment>(`/zero-trust/assessment${topUsers ? `?top_users=${topUsers}` : ""}`),
+  getZeroTrustUserAssessment: (userKey: string, lookbackDays: number = 30) =>
+    request<ZeroTrustUserAssessment>(`/zero-trust/user-assessment?user_key=${encodeURIComponent(userKey)}&lookback_days=${lookbackDays}`),
   getIdentityRun: () => request<IdentityRunResponse>("/identity/run"),
+  getDevicesRun: () => request<IdentityRunResponse>("/devices/run"),
 };
 
 // New types for added features
@@ -292,6 +300,86 @@ export interface CompareResponse {
   summary: { identical: number; modified: number; added: number; removed: number; total_settings_analyzed: number };
   identical: { resource_id: string; display_name: string; resource_type: string }[];
   modified: { resource_id: string; display_name: string; resource_type: string; changes: { json_path: string; change_type: string; old_value: string | null; new_value: string | null }[]; data_a: Record<string, unknown>; data_b: Record<string, unknown> }[];
+  added: { resource_id: string; display_name: string; resource_type: string; data: Record<string, unknown> }[];
+  removed: { resource_id: string; display_name: string; resource_type: string; data: Record<string, unknown> }[];
+}
+
+export interface TenantConnectionInput {
+  tenant_id: string;
+  client_id: string;
+  client_secret: string;
+  label?: string;
+}
+
+export interface CompareTenantsRequest {
+  tenant_a: TenantConnectionInput;
+  tenant_b: TenantConnectionInput;
+}
+
+export interface CompareTenantsResponse {
+  tenant_a: { tenant_id: string; name: string; resource_count: number };
+  tenant_b: { tenant_id: string; name: string; resource_count: number };
+  summary: {
+    match: number;
+    not_match: number;
+    duplicate: number;
+    same_settings: number;
+    different_settings: number;
+    missing_in_tenant_a: number;
+    missing_in_tenant_b: number;
+    total_policies_compared: number;
+    identical: number;
+    modified: number;
+    added: number;
+    removed: number;
+    total_settings_analyzed: number;
+  };
+  policy_items: {
+    policy_type: string;
+    resource_type: string;
+    policy_name: string;
+    policy_key: string;
+    status: "match" | "not_match" | "duplicate";
+    sub_status: "same_settings" | "different_settings" | "missing_in_tenant_a" | "missing_in_tenant_b" | "duplicate_settings" | "match";
+    reason: string;
+    tenant_a_policy_name?: string;
+    tenant_b_policy_name?: string;
+    tenant_a_count: number;
+    tenant_b_count: number;
+    tenant_a_ids: string[];
+    tenant_b_ids: string[];
+    tenant_a_data?: Record<string, unknown> | null;
+    tenant_b_data?: Record<string, unknown> | null;
+    comparison?: {
+      shared_settings_count: number;
+      same_settings_count: number;
+      different_values_count: number;
+      only_in_tenant_a_count: number;
+      only_in_tenant_b_count: number;
+      sample_same_paths: string[];
+      sample_different_paths: { path: string; tenant_a_value: string | null; tenant_b_value: string | null }[];
+      sample_only_in_tenant_a_paths: string[];
+      sample_only_in_tenant_b_paths: string[];
+    } | null;
+  }[];
+  policy_type_summary: {
+    policy_type: string;
+    match: number;
+    not_match: number;
+    duplicate: number;
+    tenant_a_total: number;
+    tenant_b_total: number;
+  }[];
+  source_errors: { policy_type: string; error: string }[];
+  identical: { resource_id: string; display_name: string; resource_type: string }[];
+  modified: {
+    resource_id: string;
+    display_name: string;
+    resource_type: string;
+    changes: { json_path: string; change_type: string; old_value: string | null; new_value: string | null }[];
+    data_a: Record<string, unknown>;
+    data_b: Record<string, unknown>;
+  }[];
   added: { resource_id: string; display_name: string; resource_type: string; data: Record<string, unknown> }[];
   removed: { resource_id: string; display_name: string; resource_type: string; data: Record<string, unknown> }[];
 }
@@ -570,6 +658,13 @@ export interface TopRiskUser {
   userType: string;
   risk_score: number;
   risk_factors: UserRiskFactor[];
+  created_date_time?: string;
+  source?: "synced" | "cloud";
+  licenses?: string[];
+  password_expires_on?: string;
+  password_length_set?: string;
+  last_sign_in?: string;
+  risk_factor_count?: number;
 }
 
 export interface PermissionStatus {
@@ -587,6 +682,28 @@ export interface ZeroTrustAssessment {
   pillars: Record<string, ZeroTrustPillar>;
   top_risk_users: TopRiskUser[];
   permissions_status: PermissionStatus;
+}
+
+export interface ZeroTrustUserAssessment {
+  generated_at: string;
+  lookback_days: number;
+  user: {
+    id: string;
+    displayName: string;
+    userPrincipalName: string;
+    accountEnabled: boolean;
+    userType: string;
+    department?: string;
+    jobTitle?: string;
+    onPremisesSyncEnabled?: boolean;
+  };
+  goals: string[];
+  risk_score: number;
+  pillars: Record<string, { score: number; max: number; notes: Record<string, unknown> }>;
+  high_risk_conditions: string[];
+  remediation_checklist: { priority: "high" | "medium" | "low"; action: string }[];
+  data_collection: Record<string, unknown>;
+  raw_samples: Record<string, unknown>;
 }
 
 export interface IdentityControl {
