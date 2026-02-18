@@ -250,6 +250,7 @@ export const api = {
   // Zero Trust Assessment
   getZeroTrustAssessment: (topUsers?: number) =>
     request<ZeroTrustAssessment>(`/zero-trust/assessment${topUsers ? `?top_users=${topUsers}` : ""}`),
+  getIdentityRun: () => request<IdentityRunResponse>("/identity/run"),
 };
 
 // New types for added features
@@ -586,4 +587,27 @@ export interface ZeroTrustAssessment {
   pillars: Record<string, ZeroTrustPillar>;
   top_risk_users: TopRiskUser[];
   permissions_status: PermissionStatus;
+}
+
+export interface IdentityControl {
+  control: string;
+  license: string;
+  priority: "high" | "medium" | "low";
+}
+
+export interface IdentityTheme {
+  theme: string;
+  checks: IdentityControl[];
+}
+
+export interface IdentityRunResponse {
+  run_at: string;
+  source_url: string;
+  summary: {
+    total_controls: number;
+    high_priority: number;
+    medium_priority: number;
+  };
+  controls: IdentityTheme[];
+  ideas_to_add_more: string[];
 }

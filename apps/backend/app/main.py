@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.routes import health, templates, monitors, snapshots, drifts, overview, devices, compare, configuration, assignments, groups, assessment_manager, zero_trust
+from app.api.routes import health, templates, monitors, snapshots, drifts, overview, devices, compare, configuration, assignments, groups, assessment_manager, zero_trust, identity
 
 
 @asynccontextmanager
@@ -40,3 +40,4 @@ app.include_router(assignments.router)
 app.include_router(groups.router)
 app.include_router(assessment_manager.router)
 app.include_router(zero_trust.router)
+app.include_router(identity.router)

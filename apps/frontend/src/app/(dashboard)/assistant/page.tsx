@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type EntraGroup,
+  type IdentityRunResponse,
   type ManagedObject,
   type ValidationResult,
   type ZeroTrustPillar,
@@ -37,7 +38,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-type TabView = "all" | "apps" | "groups" | "assessment";
+type TabView = "all" | "apps" | "groups" | "assessment" | "identity";
 type CollectionType = "apps" | "deviceConfigurations" | "deviceCompliancePolicies";
 
 const COLLECTION_LABELS: Record<CollectionType, string> = {
@@ -1314,6 +1315,118 @@ function ZeroTrustAssessmentPanel() {
   );
 }
 
+function IdentityGuidancePanel() {
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: ["identity-guidance-run"],
+    queryFn: api.getIdentityRun,
+    enabled: false,
+  });
+
+  const runData = data as IdentityRunResponse | undefined;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            Identity Guidance Runner
+          </CardTitle>
+          <CardDescription>
+            Run a checklist aligned to Microsoft Entra identity security guidance.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => refetch()} disabled={isFetching}>
+              {isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
+              {isFetching ? "Running..." : "Run Identity Check"}
+            </Button>
+            <a href="https://learn.microsoft.com/en-us/entra/fundamentals/configure-security?toc=%2Fsecurity%2Fzero-trust%2Fassessment%2Ftoc.json&bc=%2Fsecurity%2Fzero-trust%2Fassessment%2Ftoc.json" target="_blank" rel="noreferrer">
+              <Button variant="outline">
+                Open Microsoft Guidance
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </a>
+          </div>
+          {error && (
+            <p className="text-sm text-red-400">
+              {error instanceof Error ? error.message : "Failed to run identity check."}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {runData && (
+        <>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-muted-foreground">Total Controls</p>
+                <p className="text-2xl font-bold">{runData.summary.total_controls}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-muted-foreground">High Priority</p>
+                <p className="text-2xl font-bold text-red-400">{runData.summary.high_priority}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-5">
+                <p className="text-xs text-muted-foreground">Medium Priority</p>
+                <p className="text-2xl font-bold text-amber-400">{runData.summary.medium_priority}</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Identity Controls</CardTitle>
+              <CardDescription>Run time: {new Date(runData.run_at).toLocaleString()}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {runData.controls.map((theme) => (
+                <div key={theme.theme} className="rounded-lg border p-4">
+                  <p className="font-medium">{theme.theme}</p>
+                  <div className="mt-3 space-y-2">
+                    {theme.checks.map((item) => (
+                      <div key={`${theme.theme}-${item.control}`} className="flex items-center justify-between gap-3 rounded-md bg-accent/40 p-2 text-xs">
+                        <span>{item.control}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant={item.priority === "high" ? "danger" : "warning"}>{item.priority}</Badge>
+                          <Badge variant="secondary">{item.license}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Ideas To Add More</CardTitle>
+              <CardDescription>Suggested improvements for your assistant and identity operations.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                {runData.ideas_to_add_more.map((idea) => (
+                  <li key={idea} className="flex items-start gap-2">
+                    <ChevronRight className="mt-0.5 h-4 w-4 text-primary" />
+                    <span>{idea}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────
 
 export default function AssistantPage() {
@@ -1381,7 +1494,7 @@ export default function AssistantPage() {
       </div>
 
       {/* Tab selector cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6">
         <button onClick={() => setTab("all")} className="text-left">
           <Card className={`h-full transition-colors ${tab === "all" ? "border-primary/50" : "hover:border-primary/30"}`}>
             <CardHeader className="pb-3">
@@ -1416,8 +1529,9 @@ export default function AssistantPage() {
             </CardHeader>
             <CardContent>
               <ul className="space-y-2 text-xs text-muted-foreground">
-                <li className="flex items-center gap-2"><AppWindow className="h-3.5 w-3.5 text-amber-400" /> App deployment tracking</li>
-                <li className="flex items-center gap-2"><Zap className="h-3.5 w-3.5 text-emerald-400" /> Install intent analysis</li>
+                <li className="flex items-center gap-2"><AppWindow className="h-3.5 w-3.5 text-amber-400" /> Application deployment tracking and distribution monitoring</li>
+                <li className="flex items-center gap-2"><Zap className="h-3.5 w-3.5 text-emerald-400" /> App deployment tracking</li>
+                <li className="flex items-center gap-2"><Shield className="h-3.5 w-3.5 text-amber-400" /> Install analysis</li>
                 <li className="flex items-center gap-2"><BarChart3 className="h-3.5 w-3.5 text-blue-400" /> Distribution analytics</li>
               </ul>
             </CardContent>
@@ -1450,38 +1564,45 @@ export default function AssistantPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Badge variant={tab === "assessment" ? "default" : "secondary"} className="text-[10px]">
-                  {tab === "assessment" ? "ACTIVE" : "VIEW"}
+                  {tab === "assessment" ? "ACTIVE" : "LOAD"}
                 </Badge>
               </div>
               <CardTitle className="text-lg">User Assessment</CardTitle>
-              <CardDescription>Zero Trust identity assessment with 7-pillar risk scoring.</CardDescription>
+              <CardDescription>Browse users, risk signals, and security posture details from Graph.</CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="space-y-2 text-xs text-muted-foreground">
-                <li className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> 7-pillar assessment</li>
-                <li className="flex items-center gap-2"><UserCog className="h-3.5 w-3.5 text-amber-400" /> Per-user risk scoring</li>
-                <li className="flex items-center gap-2"><Fingerprint className="h-3.5 w-3.5 text-blue-400" /> MFA &amp; CA coverage</li>
+                <li className="flex items-center gap-2"><Search className="h-3.5 w-3.5 text-primary" /> Search + filters</li>
+                <li className="flex items-center gap-2"><Users className="h-3.5 w-3.5 text-emerald-400" /> Per-user details</li>
+                <li className="flex items-center gap-2"><ShieldAlert className="h-3.5 w-3.5 text-amber-400" /> Risk-driven insights</li>
               </ul>
+              <div className="mt-3 flex items-center text-xs font-medium text-primary">
+                Load User Assessment <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </div>
             </CardContent>
           </Card>
         </button>
 
-        <Card className="opacity-70">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary" className="text-[10px]">COMING SOON</Badge>
-            </div>
-            <CardTitle className="text-lg">User App Assignments</CardTitle>
-            <CardDescription>Track which applications are assigned to specific users.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-xs text-muted-foreground">
-              <li className="flex items-center gap-2"><AppWindow className="h-3.5 w-3.5" /> Per-user app view</li>
-              <li className="flex items-center gap-2"><Target className="h-3.5 w-3.5" /> Install status</li>
-              <li className="flex items-center gap-2"><BarChart3 className="h-3.5 w-3.5" /> Usage analytics</li>
-            </ul>
-          </CardContent>
-        </Card>
+        <button onClick={() => setTab("identity")} className="text-left">
+          <Card className={`h-full transition-colors ${tab === "identity" ? "border-primary/50" : "hover:border-primary/30"}`}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <Badge variant={tab === "identity" ? "default" : "secondary"} className="text-[10px]">
+                  {tab === "identity" ? "ACTIVE" : "RUN"}
+                </Badge>
+              </div>
+              <CardTitle className="text-lg">Identity</CardTitle>
+              <CardDescription>Run Microsoft Entra identity security guidance checks.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2 text-xs text-muted-foreground">
+                <li className="flex items-center gap-2"><ShieldCheck className="h-3.5 w-3.5 text-emerald-400" /> Guided control checklist</li>
+                <li className="flex items-center gap-2"><Lock className="h-3.5 w-3.5 text-amber-400" /> Identity hardening priorities</li>
+                <li className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5 text-primary" /> Run + open guidance</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </button>
       </div>
 
       {/* Search + filters (only for apps and groups tabs) */}
@@ -1573,6 +1694,8 @@ export default function AssistantPage() {
         <AssignmentManagerPanel />
       ) : tab === "assessment" ? (
         <ZeroTrustAssessmentPanel />
+      ) : tab === "identity" ? (
+        <IdentityGuidancePanel />
       ) : isLoading ? (
         <div className="space-y-3">
           {[...Array(8)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
@@ -1584,6 +1707,14 @@ export default function AssistantPage() {
             <Card>
               <CardHeader>
                 <CardTitle>App Assignments ({appData?.total ?? 0})</CardTitle>
+                <CardDescription>Track which applications are assigned to specific users.</CardDescription>
+                <div className="mt-2">
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    <li className="flex items-center gap-2"><Users className="h-3.5 w-3.5 text-primary" /> Per-user app view</li>
+                    <li className="flex items-center gap-2"><Target className="h-3.5 w-3.5 text-emerald-400" /> Install status</li>
+                    <li className="flex items-center gap-2"><BarChart3 className="h-3.5 w-3.5 text-blue-400" /> Usage analytics</li>
+                  </ul>
+                </div>
               </CardHeader>
               <CardContent>
                 {!appData?.apps.length ? (
