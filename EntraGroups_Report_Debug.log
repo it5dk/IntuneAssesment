@@ -1,0 +1,10 @@
+[2026-02-12 21:32:28] Starting. HtmlPath=C:\1Sync\OneDrive - Secbase\Oktaj\Work\GetGroups\GroupAssesment\.\EntraGroups_Report.html
+[2026-02-12 21:32:28] Disconnecting from any existing Graph session...
+[2026-02-12 21:32:29] Connecting to Microsoft Graph with scope Group.Read.All...
+[2026-02-12 21:32:31] Connected. TenantId=254334d6-04e9-468f-9c1b-8fe94cf85f53 Account=uga-admin-okban@SecureBaseline.onmicrosoft.com
+[2026-02-12 21:32:31] Fetching groups from Graph...
+[2026-02-12 21:32:31] Fetched 58 groups.
+[2026-02-12 21:32:31] DEBUG: First group = DisplayName: 'Intune - Android BYOD Devices', Id: '00b25880-c7e8-4f62-a06d-2d715ed7a62b'
+[2026-02-12 21:32:31] DEBUG: Processing group [1/58] DisplayName='Intune - Android BYOD Devices' Id='00b25880-c7e8-4f62-a06d-2d715ed7a62b'
+[2026-02-12 21:32:31] DEBUG: Processing group [2/58] DisplayName='Intune - Microsoft Dev Box Devices' Id='01b93a99-2716-4fe7-9e56-1f3b9cf427e4'
+[2026-02-12 21:32:31] DEBUG: Processing group [3/58] DisplayName='Intune - Azure IaaS Virtual Machines' Id='0434edeb-70b6-46dd-8262-4477f114ff48'

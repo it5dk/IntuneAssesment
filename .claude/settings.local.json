@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(powershell -NoProfile -Command \"[System.Management.Automation.Language.Parser]::ParseFile\\(''C:\\\\1Sync\\\\OneDrive - Secbase\\\\Oktaj\\\\Work\\\\GetGroups\\\\GroupAssesment\\\\EntraGroups-NameTune-Mapping.ps1'', [ref]$null, [ref]$null\\).EndBlock.Statements.Count; Write-Host ''Parse OK''\")",
+      "Bash(powershell -NoProfile -File -:*)",
+      "Bash(powershell.exe -NoProfile -Command \"& { $t=$null; $e=$null; [void][System.Management.Automation.Language.Parser]::ParseFile\\(''C:\\\\1Sync\\\\OneDrive - Secbase\\\\Oktaj\\\\Work\\\\GetGroups\\\\GroupAssesment\\\\EntraGroups-NameTune-Mapping.ps1'',[ref]$t,[ref]$e\\); Write-Output \\(''Errors: '' + $e.Count\\) }\")",
+      "Bash(powershell.exe:*)",
+      "Bash(docker:*)",
+      "Bash(where:*)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git commit:*)",
+      "Bash(gh auth status:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" repo create DriftControl --private --source=. --remote=origin --push)",
+      "Bash(git checkout:*)",
+      "Bash(git push:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr create --title \"feat: Drift Control full-stack app\" --body \"$\\(cat <<''EOF''\n## Summary\n- Full-stack Drift Control app for monitoring Microsoft Entra ID and Intune configuration drift\n- Backend: FastAPI + SQLAlchemy 2.0 + Celery/Redis + httpx Graph client with 5 collectors\n- Frontend: Next.js 14 dark dashboard with card-heavy UI, sidebar navigation, TanStack Query\n- Docker Compose with 6 services \\(postgres, redis, backend, celery-worker, celery-beat, frontend\\)\n\n## Test plan\n- [ ] Run `docker compose up --build -d` from `infra/`\n- [ ] Seed templates: `curl -X POST http://localhost:8000/templates/seed`\n- [ ] Create monitor from template and trigger manual run\n- [ ] Verify dashboard loads at http://localhost:3000\n- [ ] Verify drift detection after second monitor run with config changes\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\nEOF\n\\)\" --base master --head feat/drift-control-app)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr create --title \"feat: Drift Control full-stack app\" --body \"$\\(cat <<''EOF''\n## Summary\n- Full-stack Drift Control app for monitoring Microsoft Entra ID and Intune configuration drift\n- Backend: FastAPI + SQLAlchemy 2.0 + Celery/Redis + httpx Graph client with 5 collectors \\(Entra Users, Groups, Conditional Access, Intune RBAC, Device Compliance\\)\n- Frontend: Next.js 14 dark dashboard with card-heavy UI, sidebar navigation, TanStack Query\n- Docker Compose with 6 services \\(postgres, redis, backend, celery-worker, celery-beat, frontend\\)\n- Alembic migration, seeded templates, 16 REST API endpoints, drift detection engine\n\n## Test plan\n- [ ] Run `docker compose up --build -d` from `infra/`\n- [ ] Seed templates: `curl -X POST http://localhost:8000/templates/seed`\n- [ ] Create monitor from template and trigger manual run\n- [ ] Verify dashboard loads at http://localhost:3000\n- [ ] Verify drift detection after second monitor run with config changes\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\nEOF\n\\)\" --base master --head feat/drift-control-app)",
+      "WebFetch(domain:intuneassistant.cloud)",
+      "WebFetch(domain:docs.intuneassistant.cloud)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr list --repo it5dk/DriftControl)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr view 1 --repo it5dk/DriftControl)",
+      "Bash(find:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

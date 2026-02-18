@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Entra ID Compliance Dashboard</title>
+    <style>
+        :root { --primary: #0078d4; --danger: #d13438; --success: #107c10; --bg: #f3f5f8; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+        .dashboard { max-width: 1500px; margin: auto; }
+        .card { background: white; border-radius: 8px; box-shadow: 0 2px 15px rgba(0,0,0,0.05); padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #ddd; }
+        .tab { padding: 12px 20px; cursor: pointer; transition: 0.2s; font-weight: 600; color: #666; }
+        .tab.active { color: var(--primary); border-bottom: 3px solid var(--primary); }
+        .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; background: #fafafa; padding: 15px; border-radius: 8px; }
+        input, select { padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { text-align: left; background: #fcfcfc; padding: 12px; border-bottom: 2px solid #eee; cursor: pointer; color: #333; }
+        td { padding: 12px; border-bottom: 1px solid #f0f0f0; font-size: 13.5px; vertical-align: top; }
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+        .badge-match { background: #dff6dd; color: var(--success); }
+        .badge-mismatch { background: #fde7e9; color: var(--danger); }
+        .btn { padding: 6px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; text-decoration: none; display: inline-block; }
+        .btn-blue { background: var(--primary); color: white; }
+        .btn-dark { background: #323130; color: white; margin-left: 5px; }
+        .owner-cell { color: #666; font-style: italic; font-size: 11px; }
+        tr:hover { background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="card">
+            <div class="header">
+                <h2>Group Compliance & Lifecycle Report</h2>
+                <div id="stats" style="font-size: 14px; color: #666;"></div>
+            </div>
+
+            <div class="tabs">
+                <div id="tab1" class="tab active" onclick="setTab('with')">With Members</div>
+                <div id="tab2" class="tab" onclick="setTab('without')">Empty Groups (Stale)</div>
+            </div>
+
+            <div class="filter-grid">
+                <input type="text" id="srch" onkeyup="render()" placeholder="Search Name, Owner, or Category...">
+                <select id="comp" onchange="render()">
+                    <option value="">All Compliance</option>
+                    <option value="Match">Match</option>
+                    <option value="Mismatch">Mismatch</option>
+                </select>
+                <select id="cat" onchange="render()"></select>
+                <button class="btn btn-dark" onclick="exportFilteredCSV()">Export Current View</button>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Group Info</th>
+                        <th>Compliance</th>
+                        <th onclick="sortTable(2)">Suggested Name</th>
+                        <th>Lifecycle</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script id="csvData" type="text/csv">"DisplayName","SuggestedName","Compliance","GroupType","MembershipType","MemberCount","Created","Owners","Category","PortalUrl"
+"Intune - Android BYOD Devices","INTUNE-INTUNE-ANDROID-BYOD-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/00b25880-c7e8-4f62-a06d-2d715ed7a62b"
+"Intune - Microsoft Dev Box Devices","INTUNE-INTUNE-MICROSOFT-DEV-BOX","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/01b93a99-2716-4fe7-9e56-1f3b9cf427e4"
+"Intune - Azure IaaS Virtual Machines","INTUNE-INTUNE-AZURE-IAAS-VIRTUAL","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/0434edeb-70b6-46dd-8262-4477f114ff48"
+"Intune - macOS Devices","INTUNE-INTUNE-MACOS-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/08984598-4f7e-43fe-ae24-c29c8bf0cd6b"
+"Intune - iPhone Corporate Devices","INTUNE-INTUNE-IPHONE-CORPORATE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/091d1920-c9e7-4d46-9032-5a05f6905a57"
+"Intune - Apple Devices","INTUNE-INTUNE-APPLE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-APP","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/18f13779-ee38-4600-bd10-12bbe2a740d7"
+"Intune - Android Work Profile Devices","INTUNE-INTUNE-ANDROID-WORK-PROFILE","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/1bed4777-df9e-42ee-bd72-6c5210f104a0"
+"Intune - Parallels Desktop Virtual Machines","INTUNE-INTUNE-PARALLELS-DESKTOP-VIRTUAL","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/1c064a72-0da1-4255-a0a1-3a8488e66556"
+"Intune - Lenovo Devices","INTUNE-INTUNE-LENOVO-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/20c313fb-12a1-4059-a197-f2ac5b453b15"
+"Intune - macOS BYOD Devices","INTUNE-INTUNE-MACOS-BYOD-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/224a9ef1-c5fb-4e1a-a643-5a6653a71289"
+"Windows Autopilot device preparation","INTUNE-WINDOWS-AUTOPILOT-DEVICE-PREPARATION","Mismatch","Security","Manual","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/2415f279-e0d7-4cc7-873a-bce959c03513"
+"Intune - iPhone BYOD Devices","INTUNE-INTUNE-IPHONE-BYOD-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/296683ce-d5e2-4b95-a7d8-9a2216f53c3d"
+"Intune - Physical Devices Only","INTUNE-INTUNE-PHYSICAL-DEVICES-ONLY","Mismatch","Security","Dynamic","1","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/31a0239c-840f-49f4-a552-392ca53b98ac"
+"Group for Answers in Viva Engage – DO NOT DELETE 83326468097","INTUNE-GROUP-FOR-ANSWERS-IN","Mismatch","Microsoft365","Manual","0","2026-01-18","Oktaj Banusevski, okban adm","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/36a526d6-3d78-4b70-b22f-9ee97d0312ee"
+"Intune - Windows ConfigMgr Managed Devices","INTUNE-INTUNE-WINDOWS-CONFIGMGR-MANAGED","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-CFG","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/36d339cd-4b0a-481f-a0c9-be2e7dc09ff2"
+"Intune - iPad BYOD Devices","INTUNE-INTUNE-IPAD-BYOD-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/3e6f87d3-193e-4a86-a96f-2aba063a4c47"
+"Intune - Hyper-V Virtual Machines","INTUNE-INTUNE-HYPERV-VIRTUAL-MACHINES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/3f0cc8f0-8c47-4dc2-bb17-4987c259b23c"
+"Entra - License - Visio","INTUNE-ENTRA-LICENSE-VISIO","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/423f3892-55bf-41dc-9a39-f6be5029bb24"
+"Intune - macOS Corporate Devices","INTUNE-INTUNE-MACOS-CORPORATE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/490b5fbd-9cf6-4b00-84b1-4459e3c7e1b9"
+"Intune - Dell Devices","INTUNE-INTUNE-DELL-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/4f1603d9-67d3-4b03-b5cc-3187f2a83332"
+"Banusevski","INTUNE-BANUSEVSKI","Mismatch","Microsoft365","Manual","1","2026-01-18","Oktaj Banusevski, okban adm","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/5585e618-d526-4fe2-933d-f06e84f9a19b"
+"Intune - Assignment Ring Pilot Users","INTUNE-INTUNE-ASSIGNMENT-RING-PILOT","Mismatch","Security","Manual","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/593291f6-25da-46e4-9be0-00668040179f"
+"Intune - All Virtual Machines","INTUNE-INTUNE-ALL-VIRTUAL-MACHINES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/666067c8-b021-4650-a31d-56f4d3191fb5"
+"Intune - VMware Virtual Machines","INTUNE-INTUNE-VMWARE-VIRTUAL-MACHINES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/691b05ee-7f12-4ed1-942f-772dabbfb1a8"
+"Intune - Assignment Ring UAT Users","INTUNE-INTUNE-ASSIGNMENT-RING-UAT","Mismatch","Security","Manual","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/7daa42dd-ed72-4cc3-b35f-4248d3791079"
+"Intune - QEMU KVM Virtual Machines","INTUNE-INTUNE-QEMU-KVM-VIRTUAL","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/7ed144e8-ab7a-4262-afba-71b434f6b8d4"
+"Intune - iOS iPadOS Devices","INTUNE-INTUNE-IOS-IPADOS-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/83e920c1-c3f5-447f-907c-a731ca4c4454"
+"Entra - License - Power BI Pro","INTUNE-ENTRA-LICENSE-POWER-BI","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/85833040-412b-416d-8bd6-f28fec3d9940"
+"Intune - Windows 10 Devices","INTUNE-INTUNE-WINDOWS-10-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/8c3e16fa-3714-43c4-84e7-9d1292f897c7"
+"Intune - Autopilot Devices","INTUNE-INTUNE-AUTOPILOT-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/8fb1e10f-d678-4341-a533-d4d25f8e5c2f"
+"Intune - Android Fully Managed Devices","INTUNE-INTUNE-ANDROID-FULLY-MANAGED","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/91b1d12e-d002-40b6-8b1e-029debd13872"
+"Entra - License - E3","INTUNE-ENTRA-LICENSE-E3","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/9b7ed32c-0a3c-4ce1-98a1-b0fd25a264b6"
+"Intune - Azure Virtual Desktop (AVD) Named Devices","INTUNE-INTUNE-AZURE-VIRTUAL-DESKTOP","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/9e3cb411-e6e3-4336-94cc-2c9a7e190b47"
+"Entra - License - Project","INTUNE-ENTRA-LICENSE-PROJECT","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/a1312b41-fe4d-482d-b0e9-b2fd3037425a"
+"Intune - Non-Autopilot Devices","INTUNE-INTUNE-NONAUTOPILOT-DEVICES","Mismatch","Security","Dynamic","1","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/a2bf772b-97df-47ac-b230-f7609112adca"
+"Intune - Update Ring Broad Users","INTUNE-INTUNE-UPDATE-RING-BROAD","Mismatch","Security","Dynamic","1","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/a5da1858-0ce4-4ef2-ada4-c31fe7784fe5"
+"Intune - Android Corporate Devices","INTUNE-INTUNE-ANDROID-CORPORATE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/a7cab73e-5512-454a-b41b-0b0043cadc85"
+"Entra - License - E5","INTUNE-ENTRA-LICENSE-E5","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/acfd0f12-a026-453e-a635-f6ac1632a6ff"
+"Entra - License - F3","INTUNE-ENTRA-LICENSE-F3","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/adf11224-d20c-4d65-bb3f-65c903e2be6f"
+"Intune - BYOD Devices","INTUNE-INTUNE-BYOD-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/aff52868-42d6-4ec7-ae1f-86b2a781f905"
+"Entra - License - Business Premium","INTUNE-ENTRA-LICENSE-BUSINESS-PREMIUM","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/b59b1baa-0354-4c64-9600-26389a4a0d41"
+"Intune - Azure Virtual Desktop (AVD) Devices","INTUNE-INTUNE-AZURE-VIRTUAL-DESKTOP","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/b600b420-542d-42e2-8b21-7d002427e19c"
+"All Company","INTUNE-ALL-COMPANY","Mismatch","Microsoft365","Manual","1","2026-01-18","Oktaj Banusevski","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/b90c5d03-6573-43c6-b33e-b3d0459862cd"
+"Intune - iPad Corporate Devices","INTUNE-INTUNE-IPAD-CORPORATE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/b9ef3174-a9fd-4123-af8c-f13be2635f71"
+"Intune - Android Devices","INTUNE-INTUNE-ANDROID-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/c86c9f3f-02bd-48de-8fa7-b7edf4e7336d"
+"Intune - HP Devices","INTUNE-INTUNE-HP-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/caac6669-b768-4765-acdf-4daaee530b08"
+"Intune - Windows Devices","INTUNE-INTUNE-WINDOWS-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/cc94f2d4-b23c-44f1-93ff-4fac9763a4f6"
+"Intune - Android Enterprise Devices","INTUNE-INTUNE-ANDROID-ENTERPRISE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/d1648280-3309-4b3a-8ec7-52b8a66581f0"
+"Intune - Corporate Owned Devices","INTUNE-INTUNE-CORPORATE-OWNED-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/d2f29cb5-74c0-4995-90da-efbaa9d3b31d"
+"Intune - Assignment Ring Pilot Devices","INTUNE-INTUNE-ASSIGNMENT-RING-PILOT","Mismatch","Security","Manual","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/df93bd5e-ca58-4be8-88e1-e1a1e6415436"
+"Intune - iPhone Devices","INTUNE-INTUNE-IPHONE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/e0c2e7e5-666c-4acf-bbca-ac07cb4c2fcf"
+"Intune - Windows 365 Cloud PC Devices","INTUNE-INTUNE-WINDOWS-365-CLOUD","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/e56e21c5-734a-4151-89d6-817e06934cc2"
+"Entra - License - Copilot","INTUNE-ENTRA-LICENSE-COPILOT","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/e61beac5-b40e-4683-9174-40d539b96cab"
+"Intune - Microsoft Surface Devices","INTUNE-INTUNE-MICROSOFT-SURFACE-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/e83e39d0-df8b-421e-a9a0-bb79155c35eb"
+"Intune - Assignment Ring UAT Devices","INTUNE-INTUNE-ASSIGNMENT-RING-UAT","Mismatch","Security","Manual","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/ea55f4a8-ff67-49ea-ae0d-3d8dcb800d7c"
+"Intune - iPad Devices","INTUNE-INTUNE-IPAD-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/ecb924a0-ad29-4a89-9f73-df07e2eaa554"
+"Intune - VirtualBox Virtual Machines","INTUNE-INTUNE-VIRTUALBOX-VIRTUAL-MACHINES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/ef9c7214-afd9-41e7-b0c5-fc0d51ea6126"
+"Intune - Windows 11 Devices","INTUNE-INTUNE-WINDOWS-11-DEVICES","Mismatch","Security","Dynamic","0","2026-01-31","No Owner Assigned","INTUNE-GEN","https://entra.microsoft.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Overview/groupId/f4cdad83-6123-4d50-bcf9-6e33089eab5a"
+</script>
+
+    <script>
+        let rawData = [];
+        let mode = 'with';
+
+        function parse() {
+            const text = document.getElementById('csvData').textContent.trim();
+            const lines = text.split('\n');
+            const headers = lines[0].replace(/"/g, '').split(',');
+            for(let i=1; i<lines.length; i++) {
+                const cols = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+                if(!cols) continue;
+                let obj = {};
+                headers.forEach((h, idx) => obj[h.trim()] = cols[idx].replace(/"/g, '').trim());
+                rawData.push(obj);
+            }
+        }
+
+        function setTab(m) {
+            mode = m;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            event.target.classList.add('active');
+            updateCats();
+            render();
+        }
+
+        function updateCats() {
+            const filtered = rawData.filter(d => mode === 'with' ? d.MemberCount > 0 : d.MemberCount == 0);
+            const cats = [...new Set(filtered.map(d => d.Category))].sort();
+            document.getElementById('cat').innerHTML = '<option value="">All Categories</option>' + 
+                cats.map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+
+        function render() {
+            const q = document.getElementById('srch').value.toLowerCase();
+            const c = document.getElementById('cat').value;
+            const comp = document.getElementById('comp').value;
+            const body = document.getElementById('tbody');
+
+            const data = rawData.filter(d => {
+                const modeMatch = mode === 'with' ? d.MemberCount > 0 : d.MemberCount == 0;
+                const searchMatch = d.DisplayName.toLowerCase().includes(q) || d.Owners.toLowerCase().includes(q) || d.SuggestedName.toLowerCase().includes(q);
+                const catMatch = c === "" || d.Category === c;
+                const compMatch = comp === "" || d.Compliance === comp;
+                return modeMatch && searchMatch && catMatch && compMatch;
+            });
+
+            document.getElementById('stats').innerText = `Showing ${data.length} groups`;
+
+            body.innerHTML = data.map(d => `
+                <tr>
+                    <td>
+                        <strong>${d.DisplayName}</strong><br>
+                        <span class="owner-cell">Owners: ${d.Owners}</span>
+                    </td>
+                    <td><span class="badge badge-${d.Compliance.toLowerCase()}">${d.Compliance}</span></td>
+                    <td style="font-family:monospace; color:#0078d4">${d.SuggestedName}</td>
+                    <td style="font-size:11px">
+                        <b>Created:</b> ${d.Created}<br>
+                        <b>Members:</b> ${d.MemberCount}<br>
+                        <b>Type:</b> ${d.MembershipType} ${d.GroupType}
+                    </td>
+                    <td>
+                        <button class="btn btn-blue" onclick="copy('${d.SuggestedName}')">Copy Name</button>
+                        <a href="${d.PortalUrl}" target="_blank" class="btn btn-dark">Portal</a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function copy(t) { navigator.clipboard.writeText(t); alert('Suggested Name Copied!'); }
+
+        function exportFilteredCSV() {
+            // Browser-based CSV generation logic
+            alert('Exporting current view to CSV...');
+            // ... Logic to download visible rows
+        }
+
+        parse();
+        updateCats();
+        render();
+    </script>
+</body>
+</html>

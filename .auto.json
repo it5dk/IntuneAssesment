@@ -1,0 +1,22 @@
+{
+  "version": "0.0.0.2",
+  "snapshot": {
+    "autosave.ps1": {
+      "size": 16600,
+      "hash": "C15F77C4230313865535FEC09413203BDFDC44E0A43A8DE7B486617ACA2ADCC3"
+    },
+    "README.md": {
+      "size": 1468,
+      "hash": "FD1E5156CB582CE4EC56D4604D69A9ADAEB618838EB37148BDE784EB5A546EFE"
+    },
+    "EntraGroups-NameTune-Mapping.ps1": {
+      "size": 8463,
+      "hash": "2415C9C9296AFE90AD18D4678F4F7F9EF8DFB0E996D0970074025D89F901C21F"
+    },
+    "CHANGELOG.md": {
+      "size": 548,
+      "hash": "472677298A725E6D4B8996A3329616315BBDE1B5CCE45B7DCADAD46804554FD8"
+    }
+  },
+  "ts": "2026-02-12T23:02:45"
+}
