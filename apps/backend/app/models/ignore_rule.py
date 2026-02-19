@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import uuid
 from datetime import datetime, timezone
@@ -30,4 +30,5 @@ class IgnoreRule(Base):
     json_path_pattern: Mapped[str] = mapped_column(String(512), nullable=False)
     reason: Mapped[str] = mapped_column(String(512), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
 

@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,4 +88,5 @@ async def run_identity_guidance_check():
         "controls": controls,
         "ideas_to_add_more": ideas_to_add,
     }
+
 

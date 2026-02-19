@@ -11,7 +11,7 @@
 //  BEGIN USER NOTES
 //  Your notes here. We will NEVER change this block.
 //  END USER NOTES
- */ END AUTODOC HEADER
+ */
 
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
@@ -34,4 +34,5 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+
 

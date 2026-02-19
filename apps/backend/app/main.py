@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -56,4 +56,5 @@ app.include_router(groups.router)
 app.include_router(assessment_manager.router)
 app.include_router(zero_trust.router)
 app.include_router(identity.router)
+
 

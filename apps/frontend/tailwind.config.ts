@@ -11,7 +11,7 @@
 //  BEGIN USER NOTES
 //  Your notes here. We will NEVER change this block.
 //  END USER NOTES
- */ END AUTODOC HEADER
+ */
 
 import type { Config } from "tailwindcss";
 
@@ -57,4 +57,5 @@ const config: Config = {
 };
 
 export default config;
+
 

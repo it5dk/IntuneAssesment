@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -121,4 +121,5 @@ async def get_overview(db: AsyncSession = Depends(get_db)):
         recent_drifts=recent_drifts,
         monitor_status=monitor_status,
     )
+
 

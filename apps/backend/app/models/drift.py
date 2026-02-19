@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import uuid
 from datetime import datetime, timezone
@@ -40,4 +40,5 @@ class Drift(Base):
     monitor = relationship("Monitor", back_populates="drifts")
     snapshot = relationship("Snapshot")
     items = relationship("DriftItem", back_populates="drift", cascade="all, delete-orphan")
+
 

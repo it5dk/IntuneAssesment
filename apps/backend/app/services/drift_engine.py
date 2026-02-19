@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import json
 import logging
@@ -150,4 +150,5 @@ def compute_drift(
 
     logger.info("Computed %d drifts for monitor %s", len(drifts), monitor_id)
     return drifts
+
 

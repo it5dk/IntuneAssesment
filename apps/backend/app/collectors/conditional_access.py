@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import logging
 from app.services.graph_client import graph_client
@@ -41,4 +41,5 @@ async def collect_conditional_access_policies() -> list[dict]:
         })
     logger.info("Collected %d conditional access policies", len(items))
     return items
+
 

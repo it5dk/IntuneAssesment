@@ -11,7 +11,7 @@
 //  BEGIN USER NOTES
 //  Your notes here. We will NEVER change this block.
 //  END USER NOTES
- */ END AUTODOC HEADER
+ */
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

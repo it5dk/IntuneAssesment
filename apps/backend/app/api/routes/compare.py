@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -254,6 +254,16 @@ def _flatten_settings(value, prefix: str = "", out: dict[str, str] | None = None
     return out
 
 
+def _ui_policy_payload(entry: dict) -> dict | None:
+    raw = entry.get("raw")
+    if isinstance(raw, dict) and len(raw) > 0:
+        return raw
+    normalized = entry.get("normalized")
+    if isinstance(normalized, dict) and len(normalized) > 0:
+        return normalized
+    return raw if isinstance(raw, dict) else None
+
+
 def _compare_flat_settings(flat_a: dict[str, str], flat_b: dict[str, str]) -> dict:
     keys_a = set(flat_a.keys())
     keys_b = set(flat_b.keys())
@@ -444,26 +454,53 @@ async def compare_tenants(req: CompareTenantsRequest):
             tenant_a_resource_total += len(policies_a)
             tenant_b_resource_total += len(policies_b)
 
-            norm_a = [
-                {
-                    "id": str(p.get("id") or ""),
-                    "name": _policy_display_name(p),
-                    "normalized": _normalize_policy(p),
-                    "flat": _flatten_settings(_normalize_policy(p)),
-                }
-                for p in policies_a
-            ]
-            norm_b = [
-                {
-                    "id": str(p.get("id") or ""),
-                    "name": _policy_display_name(p),
-                    "normalized": _normalize_policy(p),
-                    "flat": _flatten_settings(_normalize_policy(p)),
-                }
-                for p in policies_b
-            ]
+            norm_a = []
+            for p in policies_a:
+                normalized = _normalize_policy(p)
+                norm_a.append(
+                    {
+                        "id": str(p.get("id") or ""),
+                        "name": _policy_display_name(p),
+                        "raw": p,
+                        "normalized": normalized,
+                        "flat": _flatten_settings(normalized),
+                    }
+                )
+            norm_b = []
+            for p in policies_b:
+                normalized = _normalize_policy(p)
+                norm_b.append(
+                    {
+                        "id": str(p.get("id") or ""),
+                        "name": _policy_display_name(p),
+                        "raw": p,
+                        "normalized": normalized,
+                        "flat": _flatten_settings(normalized),
+                    }
+                )
 
             type_counts = {"match": 0, "not_match": 0, "duplicate": 0}
+
+            def _best_cross_tenant_match(source_group: list[dict], other_policies: list[dict]):
+                if not source_group or not other_policies:
+                    return None
+                source = source_group[0]
+                best = None
+                best_score = -10**9
+                for candidate in other_policies:
+                    cmp = _compare_flat_settings(source["flat"], candidate["flat"])
+                    if cmp["shared_settings_count"] == 0:
+                        continue
+                    score = (
+                        cmp["same_settings_count"] * 10
+                        - cmp["different_values_count"] * 3
+                        - cmp["only_in_tenant_a_count"]
+                        - cmp["only_in_tenant_b_count"]
+                    )
+                    if score > best_score:
+                        best_score = score
+                        best = (candidate, cmp)
+                return best
 
             # Duplicate settings inside same tenant (same fingerprint)
             fp_map_a: dict[str, list[dict]] = {}
@@ -475,6 +512,11 @@ async def compare_tenants(req: CompareTenantsRequest):
             for fp, group in fp_map_a.items():
                 if len(group) > 1:
                     type_counts["duplicate"] += 1
+                    best_other = _best_cross_tenant_match(group, norm_b)
+                    group_payload = {
+                        "_duplicateCount": len(group),
+                        "_policies": [_ui_policy_payload(g) for g in group if _ui_policy_payload(g) is not None],
+                    }
                     policy_items.append(
                         {
                             "policy_type": policy_type,
@@ -483,21 +525,29 @@ async def compare_tenants(req: CompareTenantsRequest):
                             "policy_key": f"dup-a:{fp[:24]}",
                             "status": "duplicate",
                             "sub_status": "duplicate_settings",
-                            "reason": f"{len(group)} policies in tenant A have identical settings.",
+                            "reason": (
+                                f"{len(group)} policies in tenant A have identical settings."
+                                + (" Best match found in tenant B for side-by-side detail." if best_other else "")
+                            ),
                             "tenant_a_policy_name": " / ".join(g["name"] for g in group[:3]),
-                            "tenant_b_policy_name": "",
+                            "tenant_b_policy_name": best_other[0]["name"] if best_other else "",
                             "tenant_a_count": len(group),
-                            "tenant_b_count": 0,
+                            "tenant_b_count": 1 if best_other else 0,
                             "tenant_a_ids": [g["id"] for g in group if g["id"]],
-                            "tenant_b_ids": [],
-                            "tenant_a_data": group[0]["normalized"] if group else None,
-                            "tenant_b_data": None,
-                            "comparison": None,
+                            "tenant_b_ids": [best_other[0]["id"]] if best_other and best_other[0]["id"] else [],
+                            "tenant_a_data": group_payload if group_payload["_policies"] else (_ui_policy_payload(group[0]) if group else None),
+                            "tenant_b_data": _ui_policy_payload(best_other[0]) if best_other else None,
+                            "comparison": best_other[1] if best_other else None,
                         }
                     )
             for fp, group in fp_map_b.items():
                 if len(group) > 1:
                     type_counts["duplicate"] += 1
+                    best_other = _best_cross_tenant_match(group, norm_a)
+                    group_payload = {
+                        "_duplicateCount": len(group),
+                        "_policies": [_ui_policy_payload(g) for g in group if _ui_policy_payload(g) is not None],
+                    }
                     policy_items.append(
                         {
                             "policy_type": policy_type,
@@ -506,16 +556,19 @@ async def compare_tenants(req: CompareTenantsRequest):
                             "policy_key": f"dup-b:{fp[:24]}",
                             "status": "duplicate",
                             "sub_status": "duplicate_settings",
-                            "reason": f"{len(group)} policies in tenant B have identical settings.",
-                            "tenant_a_policy_name": "",
+                            "reason": (
+                                f"{len(group)} policies in tenant B have identical settings."
+                                + (" Best match found in tenant A for side-by-side detail." if best_other else "")
+                            ),
+                            "tenant_a_policy_name": best_other[0]["name"] if best_other else "",
                             "tenant_b_policy_name": " / ".join(g["name"] for g in group[:3]),
-                            "tenant_a_count": 0,
+                            "tenant_a_count": 1 if best_other else 0,
                             "tenant_b_count": len(group),
-                            "tenant_a_ids": [],
+                            "tenant_a_ids": [best_other[0]["id"]] if best_other and best_other[0]["id"] else [],
                             "tenant_b_ids": [g["id"] for g in group if g["id"]],
-                            "tenant_a_data": None,
-                            "tenant_b_data": group[0]["normalized"] if group else None,
-                            "comparison": None,
+                            "tenant_a_data": _ui_policy_payload(best_other[0]) if best_other else None,
+                            "tenant_b_data": group_payload if group_payload["_policies"] else (_ui_policy_payload(group[0]) if group else None),
+                            "comparison": best_other[1] if best_other else None,
                         }
                     )
 
@@ -598,8 +651,8 @@ async def compare_tenants(req: CompareTenantsRequest):
                         "tenant_b_count": 1,
                         "tenant_a_ids": [a["id"]] if a["id"] else [],
                         "tenant_b_ids": [b["id"]] if b["id"] else [],
-                        "tenant_a_data": a["normalized"],
-                        "tenant_b_data": b["normalized"],
+                        "tenant_a_data": _ui_policy_payload(a),
+                        "tenant_b_data": _ui_policy_payload(b),
                         "comparison": cmp,
                     }
                 )
@@ -633,7 +686,7 @@ async def compare_tenants(req: CompareTenantsRequest):
                         "tenant_b_count": 0,
                         "tenant_a_ids": [a["id"]] if a["id"] else [],
                         "tenant_b_ids": [],
-                        "tenant_a_data": a["normalized"],
+                        "tenant_a_data": _ui_policy_payload(a),
                         "tenant_b_data": None,
                         "comparison": None,
                     }
@@ -667,7 +720,7 @@ async def compare_tenants(req: CompareTenantsRequest):
                         "tenant_a_ids": [],
                         "tenant_b_ids": [b["id"]] if b["id"] else [],
                         "tenant_a_data": None,
-                        "tenant_b_data": b["normalized"],
+                        "tenant_b_data": _ui_policy_payload(b),
                         "comparison": None,
                     }
                 )
@@ -717,4 +770,5 @@ async def compare_tenants(req: CompareTenantsRequest):
         "added": added,
         "removed": removed,
     }
+
 

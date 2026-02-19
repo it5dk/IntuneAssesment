@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import time
 import logging
@@ -137,4 +137,5 @@ class GraphClient:
 
 # Singleton
 graph_client = GraphClient()
+
 

@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from pydantic import BaseModel
 from uuid import UUID
@@ -44,4 +44,5 @@ class DriftOut(BaseModel):
     items: list[DriftItemOut] | None = None
 
     model_config = {"from_attributes": True}
+
 

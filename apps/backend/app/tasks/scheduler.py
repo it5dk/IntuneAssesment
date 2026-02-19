@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 """Celery beat schedule: periodically check monitors and dispatch runs."""
 import logging
@@ -74,4 +74,5 @@ celery_app.conf.beat_schedule = {
         "schedule": 300.0,  # Check every 5 minutes
     },
 }
+
 

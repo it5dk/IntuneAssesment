@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import asyncio
 import logging
@@ -156,4 +156,5 @@ def run_monitor_task(self, monitor_id: str, run_id: str | None = None):
 
             # Don't re-raise - this prevents Celery from retrying with new run records
             return
+
 

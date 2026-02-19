@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
@@ -146,4 +146,5 @@ async def run_monitor(monitor_id: UUID, db: AsyncSession = Depends(get_db)):
     run_monitor_task.delay(str(monitor_id), str(run.id))
 
     return run
+
 

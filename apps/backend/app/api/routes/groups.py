@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -299,4 +299,5 @@ async def list_groups(
             "with_policies": sum(1 for g in groups if g["usedInCount"] > 0),
         },
     }
+
 

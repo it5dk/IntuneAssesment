@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -136,4 +136,5 @@ async def seed_templates(db: AsyncSession) -> list[Template]:
         await db.flush()
 
     return list(existing) + created
+
 

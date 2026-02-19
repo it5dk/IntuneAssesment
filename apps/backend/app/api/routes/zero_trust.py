@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 """
 Zero Trust Identity Assessment Engine
@@ -1371,4 +1371,5 @@ async def get_assessment(top_users: int = Query(50, le=5000)):
             "checks": perm_checks,
         },
     }
+
 

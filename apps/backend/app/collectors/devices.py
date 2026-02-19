@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import logging
 from app.services.graph_client import graph_client
@@ -52,4 +52,5 @@ async def collect_managed_devices() -> list[dict]:
         })
     logger.info("Collected %d managed devices", len(items))
     return items
+
 

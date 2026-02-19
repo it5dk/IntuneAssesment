@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import json
 from datetime import datetime, timezone
@@ -233,4 +233,5 @@ async def run_devices_guidance_check():
         "controls": controls,
         "ideas_to_add_more": ideas_to_add,
     }
+
 

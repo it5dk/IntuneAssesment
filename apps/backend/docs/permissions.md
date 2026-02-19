@@ -86,3 +86,4 @@ DeviceManagementApps.Read.All
 
 All collectors use Microsoft Graph **v1.0** endpoints. No beta endpoints are required for the current monitor types.
 
+

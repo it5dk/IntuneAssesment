@@ -11,7 +11,7 @@
 //  BEGIN USER NOTES
 //  Your notes here. We will NEVER change this block.
 //  END USER NOTES
- */ END AUTODOC HEADER
+ */
 
 "use client";
 
@@ -31,11 +31,15 @@ import { toast } from "sonner";
 type ViewTab = "all" | "identical" | "modified" | "added" | "removed";
 type TenantStatusFilter = "all" | "match" | "not_match" | "duplicate";
 type TenantSubStatusFilter = "all" | "same_settings" | "different_settings" | "missing_in_tenant_a" | "missing_in_tenant_b" | "duplicate_settings";
+type TenantCategoryFilter = "all" | "intune_compliance" | "intune_device_configuration" | "conditional_access" | "other";
 type TenantPolicyItem = CompareTenantsResponse["policy_items"][number];
-type DetailViewMode = "simple" | "json";
+type DetailViewMode = "plain" | "json";
+type NonCodeRow = { setting: string; path: string; a: string; b: string; result: "same" | "different" | "only_a" | "only_b" };
+type ExtractedSetting = { label: string; value: string };
 const TENANT_COMPARE_PREFS_KEY = "compare_tenant_prefs_v1";
 
 export default function ComparePage() {
+  const NON_CODE_PAGE_SIZE = 120;
   const [snapA, setSnapA] = useState("");
   const [snapB, setSnapB] = useState("");
   const [activeTab, setActiveTab] = useState<ViewTab>("all");
@@ -56,9 +60,12 @@ export default function ComparePage() {
   const [tenantStatusFilter, setTenantStatusFilter] = useState<TenantStatusFilter>("all");
   const [tenantSearch, setTenantSearch] = useState("");
   const [tenantPolicyTypeFilter, setTenantPolicyTypeFilter] = useState("all");
+  const [tenantCategoryFilter, setTenantCategoryFilter] = useState<TenantCategoryFilter>("all");
   const [tenantSubStatusFilter, setTenantSubStatusFilter] = useState<TenantSubStatusFilter>("all");
   const [selectedTenantItem, setSelectedTenantItem] = useState<TenantPolicyItem | null>(null);
-  const [detailViewMode, setDetailViewMode] = useState<DetailViewMode>("simple");
+  const [isTenantDetailOpen, setIsTenantDetailOpen] = useState(false);
+  const [detailViewMode, setDetailViewMode] = useState<DetailViewMode>("plain");
+  const [nonCodePage, setNonCodePage] = useState(1);
 
   useEffect(() => {
     try {
@@ -136,7 +143,43 @@ export default function ComparePage() {
 
   const result = compareMutation.data;
   const tenantResult = compareTenantsMutation.data;
+  const policyCategory = (policyType: string): TenantCategoryFilter => {
+    const p = policyType.toLowerCase();
+    if (
+      p.includes("conditional access") ||
+      p.includes("conditionalaccess") ||
+      p.includes("conditional_access") ||
+      p.includes("conditional-access") ||
+      p.includes("microsoft.graph.conditionalaccesspolicy")
+    ) {
+      return "conditional_access";
+    }
+    if (p.includes("compliance")) return "intune_compliance";
+    if (
+      p.includes("device configuration") ||
+      p.includes("settings catalog") ||
+      p.includes("group policy configuration") ||
+      p.includes("app configuration")
+    ) {
+      return "intune_device_configuration";
+    }
+    return "other";
+  };
+  const categoryLabel = (category: TenantCategoryFilter) => {
+    if (category === "intune_compliance") return "Intune Compliance";
+    if (category === "intune_device_configuration") return "Intune Device Configuration";
+    if (category === "conditional_access") return "Conditional Access";
+    if (category === "other") return "Other";
+    return "All";
+  };
   const tenantPolicyTypes = Array.from(new Set((tenantResult?.policy_items ?? []).map((i) => i.policy_type))).sort();
+  const tenantCategoryCounts = {
+    all: (tenantResult?.policy_items ?? []).length,
+    intune_compliance: (tenantResult?.policy_items ?? []).filter((i) => policyCategory(i.policy_type) === "intune_compliance").length,
+    intune_device_configuration: (tenantResult?.policy_items ?? []).filter((i) => policyCategory(i.policy_type) === "intune_device_configuration").length,
+    conditional_access: (tenantResult?.policy_items ?? []).filter((i) => policyCategory(i.policy_type) === "conditional_access").length,
+    other: (tenantResult?.policy_items ?? []).filter((i) => policyCategory(i.policy_type) === "other").length,
+  };
   const tenantStatusCounts = {
     all: (tenantResult?.policy_items ?? []).length,
     match: (tenantResult?.policy_items ?? []).filter((i) => i.status === "match").length,
@@ -148,6 +191,7 @@ export default function ComparePage() {
       .filter((item) => tenantStatusFilter === "all" || item.status === tenantStatusFilter)
       .filter((item) => tenantSubStatusFilter === "all" || item.sub_status === tenantSubStatusFilter)
       .filter((item) => tenantPolicyTypeFilter === "all" || item.policy_type === tenantPolicyTypeFilter)
+      .filter((item) => tenantCategoryFilter === "all" || policyCategory(item.policy_type) === tenantCategoryFilter)
       .filter((item) => {
         const q = tenantSearch.trim().toLowerCase();
         if (!q) return true;
@@ -168,28 +212,584 @@ export default function ComparePage() {
   const missingInTenantA = tenantResult?.policy_items.filter((i) => i.sub_status === "missing_in_tenant_a") ?? [];
   const missingInTenantB = tenantResult?.policy_items.filter((i) => i.sub_status === "missing_in_tenant_b") ?? [];
 
-  const openTenantItems = (
-    items: TenantPolicyItem[],
-    statusFilter?: TenantStatusFilter,
-    subStatusFilter: TenantSubStatusFilter = "all",
-  ) => {
-    setTenantSearch("");
-    setTenantPolicyTypeFilter("all");
-    setTenantSubStatusFilter(subStatusFilter);
-    if (statusFilter) {
-      setTenantStatusFilter(statusFilter);
-    }
-    setSelectedTenantItem(null);
-    if (items.length === 0) toast.info("No policy found for this selection");
-  };
   const openTenantDetail = (item: TenantPolicyItem) => {
     setSelectedTenantItem(item);
-    setDetailViewMode("simple");
+    setIsTenantDetailOpen(true);
+    setDetailViewMode("plain");
+    setNonCodePage(1);
+  };
+
+  const formatSimpleValue = (value: string | null) => {
+    if (value === null) return "null";
+    if (value === "") return '""';
+    return value;
+  };
+
+  const settingNameFromPath = (path: string) => {
+    const parts = path.split(".").filter(Boolean);
+    return parts[parts.length - 1] ?? path;
+  };
+
+  const valueToText = (value: unknown): string | null => {
+    if (value === null) return "null";
+    if (value === undefined) return null;
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+    return null;
+  };
+
+  const flattenPolicyValues = (data?: Record<string, unknown> | null) => {
+    const out = new Map<string, string>();
+    if (!data) return out;
+
+    const walk = (node: unknown, path: string) => {
+      const text = valueToText(node);
+      if (text !== null) {
+        out.set(path, text);
+        return;
+      }
+
+      if (Array.isArray(node)) {
+        node.forEach((child, idx) => walk(child, `${path}[${idx}]`));
+        return;
+      }
+
+      if (node && typeof node === "object") {
+        Object.entries(node as Record<string, unknown>).forEach(([k, v]) => {
+          walk(v, path ? `${path}.${k}` : k);
+        });
+      }
+    };
+
+    walk(data, "");
+    return out;
+  };
+
+  const includeSettingPath = (path: string) => {
+    if (!path) return false;
+    const p = path.toLowerCase();
+    const leaf = p.split(".").pop() ?? p;
+
+    // Exclude metadata/system fields from non-code settings table.
+    const blocked = [
+      "@odata",
+      "id",
+      "description",
+      "createddatetime",
+      "lastmodifieddatetime",
+      "modifieddatetime",
+      "version",
+      "rolescopetagids",
+      "issigned",
+      "isassigned",
+      "template",
+      "platform",
+      "platforms",
+      "technologies",
+      "prioritymetadata",
+      "context",
+    ];
+    if (blocked.some((k) => leaf === k || leaf.endsWith(k))) return false;
+
+    // Prefer configuration/compliance setting attributes.
+    const preferred = [
+      "value",
+      "rawvalue",
+      "rawjsonvalue",
+      "defaultvalue",
+      "description",
+      "settingdefinitionid",
+      "simplesettingvalue",
+      "rootcategory",
+      "category",
+    ];
+    if (preferred.some((k) => leaf === k || leaf.endsWith(`.${k}`))) return true;
+
+    // Keep explicit settings structures for config/compliance policies.
+    if (p.includes("_settings") || p.includes("setting") || p.includes("compliance") || p.includes("oma")) return true;
+    if (p.startsWith("_policies[")) return true;
+
+    // Fallback: include remaining scalar policy properties (except blocked metadata above).
+    return true;
+  };
+
+  const stripVendorPrefix = (v: string) => {
+    const marker = "device_vendor_msft_policy_config_";
+    if (!v.includes(marker)) return v;
+    const cleaned = v.substring(v.indexOf(marker) + marker.length);
+    const tail = cleaned.split("_").filter(Boolean).slice(-3).join(" ");
+    return tail || cleaned;
+  };
+
+  const prettifyLabel = (raw: string) => {
+    const base = raw
+      .replace(/^device_vendor_msft_policy_config_/i, "")
+      .split("_")
+      .filter(Boolean)
+      .slice(-4)
+      .join(" ");
+    const text = base || raw;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  };
+
+  const stringifySettingValue = (v: unknown): string => {
+    if (v === null || v === undefined) return "not set";
+    if (typeof v === "string") return stripVendorPrefix(v);
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    if (Array.isArray(v)) return v.map((x) => stringifySettingValue(x)).join("; ");
+    return JSON.stringify(v);
+  };
+
+  const appendDistinct = (current: string | undefined, next: string) => {
+    if (!current || current === "not set") return next;
+    const curr = current.split("; ").map((x) => x.trim()).filter(Boolean);
+    if (curr.includes(next)) return current;
+    return `${current}; ${next}`;
+  };
+
+  const addExtracted = (map: Map<string, ExtractedSetting>, key: string, label: string, value: unknown) => {
+    if (value === undefined || value === null || value === "") return;
+    const nextText = stringifySettingValue(value);
+    const existing = map.get(key);
+    map.set(key, {
+      label,
+      value: appendDistinct(existing?.value, nextText),
+    });
+  };
+
+  const extractAssignments = (policy: Record<string, unknown>) => {
+    const out: string[] = [];
+
+    const assignments = Array.isArray(policy.assignments) ? policy.assignments : [];
+    assignments.forEach((a) => {
+      if (!a || typeof a !== "object") return;
+      const ao = a as Record<string, unknown>;
+      const target = ao.target && typeof ao.target === "object" ? (ao.target as Record<string, unknown>) : ao;
+      const parts: string[] = [];
+      if (typeof target.groupId === "string" && target.groupId) parts.push(`group:${target.groupId}`);
+      if (typeof target.userId === "string" && target.userId) parts.push(`user:${target.userId}`);
+      if (typeof target.deviceAndAppManagementAssignmentFilterId === "string" && target.deviceAndAppManagementAssignmentFilterId) {
+        parts.push(`filter:${target.deviceAndAppManagementAssignmentFilterId}`);
+      }
+      if (typeof target.deviceAndAppManagementAssignmentFilterType === "string" && target.deviceAndAppManagementAssignmentFilterType) {
+        parts.push(`filterMode:${target.deviceAndAppManagementAssignmentFilterType}`);
+      }
+      if (typeof target["@odata.type"] === "string" && target["@odata.type"]) parts.push(String(target["@odata.type"]));
+      if (parts.length > 0) out.push(parts.join(" | "));
+    });
+
+    const users = (policy.conditions && typeof policy.conditions === "object"
+      ? (policy.conditions as { users?: unknown }).users
+      : undefined) as Record<string, unknown> | undefined;
+    if (users) {
+      const includeUsers = Array.isArray(users.includeUsers) ? users.includeUsers.map((v) => stringifySettingValue(v)).join(", ") : "";
+      const excludeUsers = Array.isArray(users.excludeUsers) ? users.excludeUsers.map((v) => stringifySettingValue(v)).join(", ") : "";
+      const includeGroups = Array.isArray(users.includeGroups) ? users.includeGroups.map((v) => stringifySettingValue(v)).join(", ") : "";
+      const excludeGroups = Array.isArray(users.excludeGroups) ? users.excludeGroups.map((v) => stringifySettingValue(v)).join(", ") : "";
+      const includeRoles = Array.isArray(users.includeRoles) ? users.includeRoles.map((v) => stringifySettingValue(v)).join(", ") : "";
+      const excludeRoles = Array.isArray(users.excludeRoles) ? users.excludeRoles.map((v) => stringifySettingValue(v)).join(", ") : "";
+
+      if (includeUsers) out.push(`includeUsers: ${includeUsers}`);
+      if (excludeUsers) out.push(`excludeUsers: ${excludeUsers}`);
+      if (includeGroups) out.push(`includeGroups: ${includeGroups}`);
+      if (excludeGroups) out.push(`excludeGroups: ${excludeGroups}`);
+      if (includeRoles) out.push(`includeRoles: ${includeRoles}`);
+      if (excludeRoles) out.push(`excludeRoles: ${excludeRoles}`);
+    }
+
+    const apps = (policy.conditions && typeof policy.conditions === "object"
+      ? (policy.conditions as { applications?: unknown }).applications
+      : undefined) as Record<string, unknown> | undefined;
+    if (apps) {
+      const includeApps = Array.isArray(apps.includeApplications) ? apps.includeApplications.map((v) => stringifySettingValue(v)).join(", ") : "";
+      const excludeApps = Array.isArray(apps.excludeApplications) ? apps.excludeApplications.map((v) => stringifySettingValue(v)).join(", ") : "";
+      if (includeApps) out.push(`includeApplications: ${includeApps}`);
+      if (excludeApps) out.push(`excludeApplications: ${excludeApps}`);
+    }
+
+    return out;
+  };
+
+  const extractApplicabilityRules = (policy: Record<string, unknown>) => {
+    const rules = Array.isArray(policy.applicabilityRules) ? policy.applicabilityRules : [];
+    return rules
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+      .map((r) => {
+        const t = typeof r["@odata.type"] === "string" ? r["@odata.type"] : "rule";
+        const property = typeof r.propertyName === "string" ? r.propertyName : "";
+        const op = typeof r.operator === "string" ? r.operator : "";
+        const value = "value" in r ? stringifySettingValue(r.value) : "";
+        return [t, property, op, value].filter(Boolean).join(" | ");
+      })
+      .filter(Boolean);
+  };
+
+  const extractComplianceActions = (policy: Record<string, unknown>) => {
+    const rules = Array.isArray(policy.scheduledActionsForRule) ? policy.scheduledActionsForRule : [];
+    const out: string[] = [];
+    rules.forEach((rule) => {
+      if (!rule || typeof rule !== "object") return;
+      const ro = rule as Record<string, unknown>;
+      const ruleName = typeof ro.ruleName === "string" ? ro.ruleName : "rule";
+      const actions = Array.isArray(ro.scheduledActionConfigurations) ? ro.scheduledActionConfigurations : [];
+      actions.forEach((ac) => {
+        if (!ac || typeof ac !== "object") return;
+        const ao = ac as Record<string, unknown>;
+        const actionType = typeof ao.actionType === "string" ? ao.actionType : "action";
+        const graceDays = typeof ao.gracePeriodHours === "number" ? `${ao.gracePeriodHours}h` : (typeof ao.gracePeriodHours === "string" ? ao.gracePeriodHours : "");
+        const notify = typeof ao.notificationTemplateId === "string" ? ao.notificationTemplateId : "";
+        out.push([ruleName, actionType, graceDays, notify].filter(Boolean).join(" | "));
+      });
+    });
+    return out;
+  };
+
+  const extractOmaUris = (policy: Record<string, unknown>) => {
+    const out: string[] = [];
+    const omaSettings = Array.isArray(policy.omaSettings) ? policy.omaSettings : [];
+    omaSettings.forEach((s) => {
+      if (!s || typeof s !== "object") return;
+      const so = s as Record<string, unknown>;
+      const uri = typeof so.omaUri === "string" ? so.omaUri : "";
+      const value = "value" in so ? stringifySettingValue(so.value) : "";
+      if (uri || value) out.push([uri, value].filter(Boolean).join(" = "));
+    });
+    return out;
+  };
+
+  const prettifyDirectKey = (raw: string) => {
+    return raw
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^./, (c) => c.toUpperCase());
+  };
+
+  const extractSettingsFromNode = (node: unknown, map: Map<string, ExtractedSetting>, prefix = "") => {
+    if (!node || typeof node !== "object") return;
+    const obj = node as Record<string, unknown>;
+    const settingId = typeof obj.settingDefinitionId === "string" ? obj.settingDefinitionId : "";
+    const keyBase = settingId || prefix;
+    const label = settingId ? prettifyLabel(settingId) : (prefix || "Setting");
+    const add = (suffix: string, field: string, value: unknown) => {
+      if (value === undefined || value === null || value === "") return;
+      map.set(`${keyBase}:${suffix}`, { label: `${label} - ${field}`, value: stringifySettingValue(value) });
+    };
+
+    // Keep the setting definition id for traceability, but avoid dumping raw JSON rows.
+    add("settingDefinitionId", "settingDefinitionId", settingId || undefined);
+
+    if (obj.choiceSettingValue && typeof obj.choiceSettingValue === "object") {
+      const choice = obj.choiceSettingValue as Record<string, unknown>;
+      if ("value" in choice) {
+        add("value", "Value", choice.value);
+      }
+      if (Array.isArray(choice.children)) {
+        choice.children.forEach((child, idx) => extractSettingsFromNode(child, map, `${keyBase}.choiceChild[${idx}]`));
+      }
+    }
+
+    if (Array.isArray(obj.choiceSettingCollectionValue)) {
+      const values = obj.choiceSettingCollectionValue
+        .map((x) => (x && typeof x === "object" ? (x as Record<string, unknown>).value : x))
+        .map((x) => stringifySettingValue(x))
+        .filter(Boolean);
+      if (values.length > 0) {
+        add("valueCollection", "Value", values.join("; "));
+      }
+    }
+
+    if (obj.simpleSettingValue && typeof obj.simpleSettingValue === "object") {
+      const simple = obj.simpleSettingValue as Record<string, unknown>;
+      if ("value" in simple) {
+        add("simpleSettingValue", "simpleSettingValue", simple.value);
+        add("valueSimple", "Value", simple.value);
+      }
+    }
+
+    if (Array.isArray(obj.simpleSettingCollectionValue)) {
+      const values = obj.simpleSettingCollectionValue
+        .map((x) => (x && typeof x === "object" ? (x as Record<string, unknown>).value : x))
+        .map((x) => stringifySettingValue(x))
+        .filter(Boolean);
+      if (values.length > 0) {
+        add("simpleCollection", "simpleSettingValue", values.join("; "));
+        add("valueSimpleCollection", "Value", values.join("; "));
+      }
+    }
+
+    if (Array.isArray(obj.groupSettingCollectionValue)) {
+      obj.groupSettingCollectionValue.forEach((child, idx) => extractSettingsFromNode(child, map, `${keyBase}.group[${idx}]`));
+    }
+    if (Array.isArray(obj.children)) {
+      obj.children.forEach((child, idx) => extractSettingsFromNode(child, map, `${keyBase}.child[${idx}]`));
+    }
+  };
+
+  const extractDirectPolicySettings = (policy: Record<string, unknown>, map: Map<string, ExtractedSetting>, policyIdx: number) => {
+    const blocked = new Set([
+      "id",
+      "name",
+      "displayName",
+      "description",
+      "createdDateTime",
+      "lastModifiedDateTime",
+      "modifiedDateTime",
+      "@odata.type",
+      "@odata.context",
+      "roleScopeTagIds",
+      "templateId",
+      "templateFamily",
+      "templateDisplayName",
+      "platform",
+      "platforms",
+      "technologies",
+      "version",
+      "priorityMetaData",
+      "assignments",
+      "scheduledActionsForRule",
+      "applicabilityRules",
+      "omaSettings",
+      "_settings",
+      "_policies",
+    ]);
+
+    const scalarLike = (v: unknown) =>
+      v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean" ||
+      (Array.isArray(v) && v.every((x) => x === null || typeof x === "string" || typeof x === "number" || typeof x === "boolean"));
+
+    Object.entries(policy).forEach(([k, v]) => {
+      if (blocked.has(k) || k.startsWith("@odata")) return;
+      if (!scalarLike(v)) return;
+      const key = `policy[${policyIdx}]:direct:${k}`;
+      addExtracted(map, key, prettifyDirectKey(k), v);
+    });
+  };
+
+  const extractPolicySettingMap = (data?: Record<string, unknown> | null) => {
+    const out = new Map<string, ExtractedSetting>();
+    if (!data) return out;
+
+    const policyObjects =
+      Array.isArray((data as { _policies?: unknown[] })._policies) && (data as { _policies?: unknown[] })._policies
+        ? ((data as { _policies?: Record<string, unknown>[] })._policies ?? [])
+        : [data];
+
+    policyObjects.forEach((policy, policyIdx) => {
+      const keyPrefix = `policy[${policyIdx}]`;
+      // Core compare context rows (policy-relevant metadata)
+      addExtracted(out, `${keyPrefix}:ScopeTags`, "ScopeTags", policy.roleScopeTagIds);
+      addExtracted(out, `${keyPrefix}:TemplateId`, "TemplateId", policy.templateId);
+      addExtracted(out, `${keyPrefix}:TemplateFamily`, "TemplateFamily", policy.templateFamily);
+      addExtracted(out, `${keyPrefix}:TemplateDisplayName`, "TemplateDisplayName", policy.templateDisplayName);
+
+      extractAssignments(policy).forEach((x, idx) => addExtracted(out, `${keyPrefix}:Assignment:${idx}`, "AssignmentTarget", x));
+      extractApplicabilityRules(policy).forEach((x, idx) => addExtracted(out, `${keyPrefix}:Applicability:${idx}`, "ApplicabilityRule", x));
+      extractComplianceActions(policy).forEach((x, idx) => addExtracted(out, `${keyPrefix}:ComplianceAction:${idx}`, "ComplianceAction", x));
+      extractOmaUris(policy).forEach((x, idx) => addExtracted(out, `${keyPrefix}:OmaUri:${idx}`, "OMA-URI", x));
+
+      const settings = Array.isArray(policy._settings) ? policy._settings : [];
+      settings.forEach((s, sIdx) => extractSettingsFromNode(s, out, `_settings[${sIdx}]`));
+      extractDirectPolicySettings(policy, out, policyIdx);
+    });
+
+    return out;
+  };
+
+  const isBlockedSettingLabel = (label: string) => {
+    const normalized = label.trim().toLowerCase();
+    if (normalized === "name" || normalized === "description" || normalized === "rootcategory") return true;
+    if (normalized.endsWith(" - description") || normalized.endsWith(" - rootcategory")) return true;
+    return false;
+  };
+
+  const buildNonCodeRows = (item: TenantPolicyItem) => {
+    const leftData = item.tenant_a_data ?? item.tenant_b_data ?? null;
+    const rightData = item.tenant_b_data ?? item.tenant_a_data ?? null;
+    const structuredA = extractPolicySettingMap(leftData);
+    const structuredB = extractPolicySettingMap(rightData);
+    if (structuredA.size > 0 || structuredB.size > 0) {
+      const structuredKeys = Array.from(new Set([...structuredA.keys(), ...structuredB.keys()])).sort((x, y) => x.localeCompare(y));
+      return structuredKeys.map((key) => {
+        const left = structuredA.get(key);
+        const right = structuredB.get(key);
+        const aVal = left?.value ?? "not set";
+        const bVal = right?.value ?? "not set";
+        const result: NonCodeRow["result"] =
+          left && right ? (aVal === bVal ? "same" : "different") : left ? "only_a" : "only_b";
+        return {
+          setting: left?.label ?? right?.label ?? key,
+          path: key,
+          a: aVal,
+          b: bVal,
+          result,
+        };
+      }).filter((row) => !isBlockedSettingLabel(row.setting));
+    }
+
+    const aMap = flattenPolicyValues(leftData);
+    const bMap = flattenPolicyValues(rightData);
+    const keys = Array.from(new Set([...aMap.keys(), ...bMap.keys()]))
+      .sort((x, y) => x.localeCompare(y))
+      .filter((k) => k.length > 0)
+      .filter(includeSettingPath);
+
+    const rows = keys.map((path) => {
+      const av = aMap.get(path);
+      const bv = bMap.get(path);
+      let result: NonCodeRow["result"] = "different";
+      if (av !== undefined && bv !== undefined) {
+        result = av === bv ? "same" : "different";
+      } else if (av !== undefined) {
+        result = "only_a";
+      } else {
+        result = "only_b";
+      }
+      return {
+        setting: settingNameFromPath(path),
+        path,
+        a: av ?? "not set",
+        b: bv ?? "not set",
+        result,
+      };
+    });
+
+    // Ensure a clear policy-name row is always present.
+    return rows.filter((row) => !isBlockedSettingLabel(row.setting));
+  };
+
+  const readPolicyMeta = (data?: Record<string, unknown> | null) => {
+    const policies = (data as { _policies?: unknown[] } | undefined)?._policies;
+    const primary =
+      data &&
+      Array.isArray(policies) &&
+      policies.length > 0 &&
+      typeof policies[0] === "object" &&
+      policies[0] !== null
+        ? ((policies[0] as Record<string, unknown>) ?? data)
+        : data;
+
+    if (!data) {
+      return {
+        description: "—",
+        createdDate: "—",
+        lastModified: "—",
+        platform: "—",
+        technologies: "—",
+        template: "—",
+        settingCount: "—",
+        assignedTo: "—",
+      };
+    }
+
+    const flat = flattenPolicyValues(primary);
+    const firstFromFlat = (needle: string) => {
+      const found = Array.from(flat.entries()).find(([k]) => k.toLowerCase().endsWith(needle.toLowerCase()));
+      return found?.[1];
+    };
+
+    const description =
+      (typeof primary?.description === "string" && primary.description) ||
+      (typeof primary?.desc === "string" && primary.desc) ||
+      "—";
+    const createdDate =
+      (typeof primary?.createdDateTime === "string" && primary.createdDateTime) ||
+      firstFromFlat("createdDateTime") ||
+      "—";
+    const lastModified =
+      (typeof primary?.lastModifiedDateTime === "string" && primary.lastModifiedDateTime) ||
+      (typeof primary?.modifiedDateTime === "string" && primary.modifiedDateTime) ||
+      firstFromFlat("lastModifiedDateTime") ||
+      "—";
+    const platform =
+      (typeof primary?.platforms === "string" && primary.platforms) ||
+      (Array.isArray(primary?.platforms) ? primary.platforms.filter((v): v is string => typeof v === "string").join(", ") : "") ||
+      (typeof primary?.platform === "string" && primary.platform) ||
+      firstFromFlat("platforms") ||
+      "—";
+    const technologies =
+      (typeof primary?.technologies === "string" && primary.technologies) ||
+      (Array.isArray(primary?.technologies) ? primary.technologies.filter((v): v is string => typeof v === "string").join(", ") : "") ||
+      (typeof primary?.["@odata.type"] === "string" && primary["@odata.type"]) ||
+      "—";
+    const template =
+      (typeof primary?.templateDisplayName === "string" && primary.templateDisplayName) ||
+      (typeof primary?.templateId === "string" && primary.templateId) ||
+      (typeof primary?.templateReference === "object" &&
+      primary.templateReference !== null &&
+      "templateId" in primary.templateReference &&
+      typeof (primary.templateReference as { templateId?: unknown }).templateId === "string"
+        ? ((primary.templateReference as { templateId?: string }).templateId ?? "—")
+        : "—");
+
+    const includeUsers =
+      Array.isArray((primary as { conditions?: { users?: { includeUsers?: unknown[] } } })?.conditions?.users?.includeUsers)
+        ? (primary as { conditions?: { users?: { includeUsers?: string[] } } }).conditions?.users?.includeUsers ?? []
+        : [];
+    const includeGroups =
+      Array.isArray((primary as { conditions?: { users?: { includeGroups?: unknown[] } } })?.conditions?.users?.includeGroups)
+        ? (primary as { conditions?: { users?: { includeGroups?: string[] } } }).conditions?.users?.includeGroups ?? []
+        : [];
+    const assignments =
+      Array.isArray((primary as { assignments?: unknown[] }).assignments)
+        ? (primary as { assignments?: unknown[] }).assignments ?? []
+        : [];
+    const assignedTo =
+      assignments.length > 0
+        ? `${assignments.length} assignment target(s)`
+        : includeUsers.length > 0 || includeGroups.length > 0
+          ? `Users: ${includeUsers.length}, Groups: ${includeGroups.length}`
+          : "Not available in payload";
+
+    const settingCount =
+      typeof primary?.settingCount === "number"
+        ? String(primary.settingCount)
+        : typeof primary?.settings_count === "number"
+          ? String(primary.settings_count)
+          : typeof (data as { _duplicateCount?: unknown })?._duplicateCount === "number"
+            ? String((data as { _duplicateCount?: number })._duplicateCount)
+            : flat.size > 0
+              ? String(flat.size)
+          : "—";
+
+    return { description, createdDate, lastModified, platform, technologies, template, settingCount, assignedTo };
   };
 
   useEffect(() => {
+    setIsTenantDetailOpen(false);
     setSelectedTenantItem(null);
   }, [tenantResult?.summary.total_policies_compared]);
+
+  useEffect(() => {
+    setNonCodePage(1);
+  }, [selectedTenantItem?.policy_key]);
+
+  const summaryTenantAData = selectedTenantItem?.tenant_a_data ?? selectedTenantItem?.tenant_b_data ?? null;
+  const summaryTenantBData = selectedTenantItem?.tenant_b_data ?? selectedTenantItem?.tenant_a_data ?? null;
+  const summaryTenantAPolicyName = selectedTenantItem?.tenant_a_policy_name || selectedTenantItem?.tenant_b_policy_name || "Not present";
+  const summaryTenantBPolicyName = selectedTenantItem?.tenant_b_policy_name || selectedTenantItem?.tenant_a_policy_name || "Not present";
+
+  const nonCodeRows = selectedTenantItem ? buildNonCodeRows(selectedTenantItem) : [];
+  const nonCodeTotalRows = nonCodeRows.length;
+  const nonCodeTotalPages = Math.max(1, Math.ceil(nonCodeTotalRows / NON_CODE_PAGE_SIZE));
+  const safeNonCodePage = Math.min(nonCodePage, nonCodeTotalPages);
+  const nonCodeStart = nonCodeTotalRows === 0 ? 0 : (safeNonCodePage - 1) * NON_CODE_PAGE_SIZE + 1;
+  const nonCodeEnd = Math.min(safeNonCodePage * NON_CODE_PAGE_SIZE, nonCodeTotalRows);
+  const nonCodePageRows = nonCodeRows.slice((safeNonCodePage - 1) * NON_CODE_PAGE_SIZE, safeNonCodePage * NON_CODE_PAGE_SIZE);
+  const selectedPolicyCategory: TenantCategoryFilter =
+    selectedTenantItem ? policyCategory(selectedTenantItem.policy_type) : "all";
+  const selectedCategoryItems =
+    selectedPolicyCategory === "all"
+      ? (tenantResult?.policy_items ?? [])
+      : (tenantResult?.policy_items ?? []).filter((i) => policyCategory(i.policy_type) === selectedPolicyCategory);
+  const selectedCategorySummary = {
+    same_settings: selectedCategoryItems.filter((i) => i.sub_status === "same_settings").length,
+    different_settings: selectedCategoryItems.filter((i) => i.sub_status === "different_settings").length,
+    missing_in_tenant_a: selectedCategoryItems.filter((i) => i.sub_status === "missing_in_tenant_a").length,
+    missing_in_tenant_b: selectedCategoryItems.filter((i) => i.sub_status === "missing_in_tenant_b").length,
+    duplicate: selectedCategoryItems.filter((i) => i.status === "duplicate").length,
+  };
 
   return (
     <div className="space-y-8">
@@ -680,92 +1280,63 @@ export default function ComparePage() {
                         Same policies, policies with settings differences, and policies missing in tenant A or tenant B.
                       </CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <button
-                          type="button"
-                          className="text-sm font-medium hover:underline"
-                          onClick={() => openTenantItems(samePolicies, "match", "same_settings")}
-                        >
-                          Same ({samePolicies.length})
-                        </button>
-                        <div className="mt-2 space-y-2">
-                          {samePolicies.slice(0, 6).map((item) => (
-                            <button
-                              type="button"
+                    <CardContent className="space-y-3">
+                      <div className="rounded-md border border-primary/30 p-3">
+                        <p className="text-sm font-medium">Same ({samePolicies.length})</p>
+                        <div className="mt-3 space-y-2">
+                          {samePolicies.slice(0, 5).map((item) => (
+                            <div
                               key={`same:${item.policy_type}:${item.policy_key}`}
-                              onClick={() => openTenantDetail(item)}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left hover:bg-accent/30"
+                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
                             >
                               <span className="truncate">{item.policy_name} · {item.policy_type}</span>
                               <Badge variant="success">same</Badge>
-                            </button>
+                            </div>
                           ))}
                         </div>
                       </div>
-                      <div>
-                        <button
-                          type="button"
-                          className="text-sm font-medium hover:underline"
-                          onClick={() => openTenantItems(differentPolicies, "not_match", "different_settings")}
-                        >
-                          Different settings ({differentPolicies.length})
-                        </button>
-                        <div className="mt-2 space-y-2">
-                          {differentPolicies.slice(0, 6).map((item) => (
-                            <button
-                              type="button"
+
+                      <div className="rounded-md border border-primary/30 p-3">
+                        <p className="text-sm font-medium">Different settings ({differentPolicies.length})</p>
+                        <div className="mt-3 space-y-2">
+                          {differentPolicies.slice(0, 5).map((item) => (
+                            <div
                               key={`diff:${item.policy_type}:${item.policy_key}`}
-                              onClick={() => openTenantDetail(item)}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left hover:bg-accent/30"
+                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
                             >
                               <span className="truncate">{item.policy_name} · {item.policy_type}</span>
                               <Badge variant="warning">different</Badge>
-                            </button>
+                            </div>
                           ))}
                         </div>
                       </div>
-                      <div>
-                        <button
-                          type="button"
-                          className="text-sm font-medium hover:underline"
-                          onClick={() => openTenantItems(missingInTenantA, "not_match", "missing_in_tenant_a")}
-                        >
-                          Missing in {tenantResult.tenant_a.name} ({missingInTenantA.length})
-                        </button>
-                        <div className="mt-2 space-y-2">
-                          {missingInTenantA.slice(0, 6).map((item) => (
-                            <button
-                              type="button"
+
+                      <div className="rounded-md border border-primary/30 p-3">
+                        <p className="text-sm font-medium">Missing in {tenantResult.tenant_a.name} ({missingInTenantA.length})</p>
+                        <div className="mt-3 space-y-2">
+                          {missingInTenantA.slice(0, 5).map((item) => (
+                            <div
                               key={`ma:${item.policy_type}:${item.policy_key}`}
-                              onClick={() => openTenantDetail(item)}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left hover:bg-accent/30"
+                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
                             >
                               <span className="truncate">{item.policy_name} · {item.policy_type}</span>
                               <Badge variant="danger">missing A</Badge>
-                            </button>
+                            </div>
                           ))}
                         </div>
                       </div>
-                      <div>
-                        <button
-                          type="button"
-                          className="text-sm font-medium hover:underline"
-                          onClick={() => openTenantItems(missingInTenantB, "not_match", "missing_in_tenant_b")}
-                        >
-                          Missing in {tenantResult.tenant_b.name} ({missingInTenantB.length})
-                        </button>
-                        <div className="mt-2 space-y-2">
-                          {missingInTenantB.slice(0, 6).map((item) => (
-                            <button
-                              type="button"
+
+                      <div className="rounded-md border border-primary/30 p-3">
+                        <p className="text-sm font-medium">Missing in {tenantResult.tenant_b.name} ({missingInTenantB.length})</p>
+                        <div className="mt-3 space-y-2">
+                          {missingInTenantB.slice(0, 5).map((item) => (
+                            <div
                               key={`mb:${item.policy_type}:${item.policy_key}`}
-                              onClick={() => openTenantDetail(item)}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left hover:bg-accent/30"
+                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
                             >
                               <span className="truncate">{item.policy_name} · {item.policy_type}</span>
                               <Badge variant="danger">missing B</Badge>
-                            </button>
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -799,17 +1370,37 @@ export default function ComparePage() {
                         {(["all", "match", "not_match", "duplicate"] as const).map((status) => (
                           <Button
                             key={status}
+                            type="button"
                             size="sm"
                             variant={tenantStatusFilter === status ? "default" : "outline"}
                             onClick={() => {
                               setTenantSearch("");
                               setTenantPolicyTypeFilter("all");
+                              setTenantCategoryFilter("all");
                               setTenantSubStatusFilter("all");
                               setTenantStatusFilter(status);
+                              setIsTenantDetailOpen(false);
                               setSelectedTenantItem(null);
                             }}
                           >
                             {status === "all" ? "All" : status} ({tenantStatusCounts[status]})
+                          </Button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 flex-wrap pt-1">
+                        {(["all", "intune_compliance", "intune_device_configuration", "conditional_access", "other"] as const).map((category) => (
+                          <Button
+                            key={category}
+                            type="button"
+                            size="sm"
+                            variant={tenantCategoryFilter === category ? "default" : "outline"}
+                            onClick={() => {
+                              setTenantCategoryFilter(category);
+                              setIsTenantDetailOpen(false);
+                              setSelectedTenantItem(null);
+                            }}
+                          >
+                            {categoryLabel(category)} ({tenantCategoryCounts[category]})
                           </Button>
                         ))}
                       </div>
@@ -829,7 +1420,7 @@ export default function ComparePage() {
                           >
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{item.policy_name}</p>
-                              <p className="text-xs text-muted-foreground">{item.policy_type}</p>
+                              <p className="text-xs text-muted-foreground">{item.policy_type} · {categoryLabel(policyCategory(item.policy_type))}</p>
                               <p className="text-xs text-muted-foreground">{item.reason}</p>
                               <p className="text-xs text-muted-foreground">
                                 {tenantResult.tenant_a.name}: {item.tenant_a_count} | {tenantResult.tenant_b.name}: {item.tenant_b_count}
@@ -1185,112 +1776,148 @@ export default function ComparePage() {
         </>
       )}
 
-      {selectedTenantItem && (
-        <div className="fixed inset-0 z-50 bg-black/60 p-4 md:p-8">
-          <div className="mx-auto max-w-6xl h-full overflow-auto rounded-xl border bg-background p-4 md:p-6">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-base font-semibold">Policy Detail View</p>
-                <p className="text-xs text-muted-foreground">{selectedTenantItem.policy_name}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={detailViewMode === "simple" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setDetailViewMode("simple")}
-                >
-                  Simple view
-                </Button>
-                <Button
-                  variant={detailViewMode === "json" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setDetailViewMode("json")}
-                >
-                  JSON view
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => setSelectedTenantItem(null)}>
-                  <X className="h-4 w-4 mr-1" />
-                  Close
-                </Button>
-              </div>
-            </div>
-            {detailViewMode === "simple" ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <Card className="border-primary/30">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">{tenantResult?.tenant_a.name ?? "Tenant A"}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1 text-xs text-muted-foreground">
-                      <p>Policy: {selectedTenantItem.tenant_a_policy_name || "Not present"}</p>
-                      <p>IDs: {selectedTenantItem.tenant_a_ids.join(", ") || "—"}</p>
-                    </CardContent>
-                  </Card>
-                  <Card className="border-primary/30">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">{tenantResult?.tenant_b.name ?? "Tenant B"}</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-1 text-xs text-muted-foreground">
-                      <p>Policy: {selectedTenantItem.tenant_b_policy_name || "Not present"}</p>
-                      <p>IDs: {selectedTenantItem.tenant_b_ids.join(", ") || "—"}</p>
-                    </CardContent>
-                  </Card>
+      {selectedTenantItem && isTenantDetailOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-2 sm:p-4 md:p-6 overflow-y-auto">
+          <div className="mx-auto w-[min(1600px,98vw)] max-h-[94vh] overflow-hidden rounded-2xl border border-primary/30 bg-background shadow-2xl">
+            <div className="sticky top-0 z-20 border-b border-border/60 bg-background/95 backdrop-blur px-3 py-3 sm:px-5 sm:py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold leading-tight">Policy Detail View</p>
+                  <p className="text-xs text-muted-foreground truncate">{selectedTenantItem.policy_name}</p>
                 </div>
-
-                {selectedTenantItem.comparison ? (
-                  <Card className="border-primary/30">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-sm">Simple Side-by-Side Settings</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3 text-xs">
-                      <div className="rounded-md border overflow-hidden">
-                        <div className="grid grid-cols-[1fr_1fr_1fr] bg-muted/40 px-3 py-2 font-medium">
-                          <span>Setting path</span>
-                          <span>{tenantResult?.tenant_a.name ?? "Tenant A"}</span>
-                          <span>{tenantResult?.tenant_b.name ?? "Tenant B"}</span>
-                        </div>
-                        <div className="max-h-64 overflow-auto">
-                          {selectedTenantItem.comparison.sample_different_paths.length > 0 ? (
-                            selectedTenantItem.comparison.sample_different_paths.map((row) => (
-                              <div key={row.path} className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-2 border-t">
-                                <span className="font-mono">{row.path}</span>
-                                <span className="truncate">{row.tenant_a_value ?? "null"}</span>
-                                <span className="truncate">{row.tenant_b_value ?? "null"}</span>
-                              </div>
-                            ))
-                          ) : (
-                            <div className="px-3 py-2 text-muted-foreground">No different values in sample set.</div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <div className="rounded-md border p-3">
-                          <p className="font-medium mb-1">Only in {tenantResult?.tenant_a.name ?? "Tenant A"}</p>
-                          {selectedTenantItem.comparison.sample_only_in_tenant_a_paths.length === 0 ? (
-                            <p className="text-muted-foreground">None</p>
-                          ) : (
-                            selectedTenantItem.comparison.sample_only_in_tenant_a_paths.map((path) => (
-                              <p key={path} className="font-mono">{path}</p>
-                            ))
-                          )}
-                        </div>
-                        <div className="rounded-md border p-3">
-                          <p className="font-medium mb-1">Only in {tenantResult?.tenant_b.name ?? "Tenant B"}</p>
-                          {selectedTenantItem.comparison.sample_only_in_tenant_b_paths.length === 0 ? (
-                            <p className="text-muted-foreground">None</p>
-                          ) : (
-                            selectedTenantItem.comparison.sample_only_in_tenant_b_paths.map((path) => (
-                              <p key={path} className="font-mono">{path}</p>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : null}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="flex flex-wrap items-center gap-2">
+		                <Button
+		                  variant={detailViewMode === "plain" ? "default" : "outline"}
+		                  size="sm"
+		                  onClick={() => setDetailViewMode("plain")}
+	                >
+	                  Non-code view
+	                </Button>
+	                <Button
+	                  variant={detailViewMode === "json" ? "default" : "outline"}
+	                  size="sm"
+	                  onClick={() => setDetailViewMode("json")}
+                >
+		                  JSON view
+	                </Button>
+	                <Button variant="outline" size="sm" onClick={() => { setIsTenantDetailOpen(false); setSelectedTenantItem(null); }}>
+	                  <X className="h-4 w-4 mr-1" />
+	                  Close
+	                </Button>
+	                </div>
+	              </div>
+	            </div>
+              <div className="overflow-y-auto max-h-[calc(94vh-92px)] px-3 pb-3 pt-2 sm:px-5 sm:pb-5">
+		            {detailViewMode === "plain" ? (
+		              <div className="space-y-4">
+		                <Card className="border-primary/30">
+	                  <CardHeader className="pb-2">
+	                    <CardTitle className="text-sm">Side-by-Side Summary</CardTitle>
+	                  </CardHeader>
+		                  <CardContent className="grid grid-cols-1 gap-3 text-xs md:grid-cols-2">
+		                    <div className="rounded-md border p-3 space-y-1">
+		                      <p className="font-medium">{tenantResult?.tenant_a.name ?? "Tenant A"}</p>
+		                      <p className="text-muted-foreground">Policy: {summaryTenantAPolicyName}</p>
+		                      <p className="text-muted-foreground">Platform: {readPolicyMeta(summaryTenantAData).platform}</p>
+		                      <p className="text-muted-foreground">Created: {readPolicyMeta(summaryTenantAData).createdDate}</p>
+		                      <p className="text-muted-foreground">Last modified: {readPolicyMeta(summaryTenantAData).lastModified}</p>
+		                      <p className="text-muted-foreground">Setting count: {readPolicyMeta(summaryTenantAData).settingCount}</p>
+		                      <p className="text-muted-foreground">Assigned to: {readPolicyMeta(summaryTenantAData).assignedTo}</p>
+		                    </div>
+		                    <div className="rounded-md border p-3 space-y-1">
+		                      <p className="font-medium">{tenantResult?.tenant_b.name ?? "Tenant B"}</p>
+		                      <p className="text-muted-foreground">Policy: {summaryTenantBPolicyName}</p>
+		                      <p className="text-muted-foreground">Platform: {readPolicyMeta(summaryTenantBData).platform}</p>
+		                      <p className="text-muted-foreground">Created: {readPolicyMeta(summaryTenantBData).createdDate}</p>
+		                      <p className="text-muted-foreground">Last modified: {readPolicyMeta(summaryTenantBData).lastModified}</p>
+		                      <p className="text-muted-foreground">Setting count: {readPolicyMeta(summaryTenantBData).settingCount}</p>
+		                      <p className="text-muted-foreground">Assigned to: {readPolicyMeta(summaryTenantBData).assignedTo}</p>
+		                    </div>
+		                  </CardContent>
+		                </Card>
+		                <Card className="border-primary/30">
+		                  <CardHeader className="pb-2">
+		                    <div className="flex items-center justify-between gap-3">
+		                      <CardTitle className="text-sm">Non-code Side-by-Side Settings</CardTitle>
+		                      <p className="text-xs text-muted-foreground">
+	                        Showing {nonCodeStart}-{nonCodeEnd} of {nonCodeTotalRows}
+	                      </p>
+		                    </div>
+		                  </CardHeader>
+		                  <CardContent>
+		                    <div className="rounded-md border overflow-hidden max-h-[62vh] overflow-auto">
+		                      <table className="w-full text-xs">
+		                        <thead className="bg-muted/50 sticky top-0 z-10">
+	                          <tr>
+	                            <th className="px-3 py-2 text-left">Setting</th>
+	                            <th className="px-3 py-2 text-left">{tenantResult?.tenant_a.name ?? "Tenant A"}</th>
+	                            <th className="px-3 py-2 text-left">{tenantResult?.tenant_b.name ?? "Tenant B"}</th>
+	                            <th className="px-3 py-2 text-left">Result</th>
+	                          </tr>
+	                        </thead>
+	                        <tbody>
+		                          {nonCodePageRows.map((row) => (
+		                            <tr key={`plain:${row.result}:${row.path}`} className="border-t">
+		                              <td className="px-3 py-2">
+		                                <p className="font-medium">{row.setting}</p>
+		                              </td>
+	                              <td className="px-3 py-2 break-all">{row.a}</td>
+	                              <td className="px-3 py-2 break-all">{row.b}</td>
+	                              <td className="px-3 py-2">
+	                                <Badge
+	                                  variant={
+	                                    row.result === "same"
+	                                      ? "success"
+	                                      : row.result === "different"
+	                                        ? "warning"
+	                                        : "danger"
+	                                  }
+	                                >
+	                                  {row.result}
+	                                </Badge>
+	                              </td>
+	                            </tr>
+	                          ))}
+	                          {nonCodeTotalRows === 0 ? (
+	                            <tr className="border-t">
+	                              <td className="px-3 py-2 text-muted-foreground" colSpan={4}>
+	                                No settings available for side-by-side view.
+	                              </td>
+	                            </tr>
+	                          ) : null}
+	                        </tbody>
+	                      </table>
+	                    </div>
+	                    {nonCodeTotalRows > NON_CODE_PAGE_SIZE ? (
+	                      <div className="mt-3 flex items-center justify-end gap-2">
+	                        <Button
+	                          size="sm"
+	                          variant="outline"
+	                          type="button"
+	                          disabled={safeNonCodePage <= 1}
+	                          onClick={() => setNonCodePage((p) => Math.max(1, p - 1))}
+	                        >
+	                          Previous
+	                        </Button>
+	                        <p className="text-xs text-muted-foreground">
+	                          Page {safeNonCodePage} / {nonCodeTotalPages}
+	                        </p>
+	                        <Button
+	                          size="sm"
+	                          variant="outline"
+	                          type="button"
+	                          disabled={safeNonCodePage >= nonCodeTotalPages}
+	                          onClick={() => setNonCodePage((p) => Math.min(nonCodeTotalPages, p + 1))}
+	                        >
+	                          Next
+	                        </Button>
+	                      </div>
+		                    ) : null}
+		                  </CardContent>
+		                </Card>
+		              </div>
+		            ) : (
+	              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Card className="border-primary/30">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm">{tenantResult?.tenant_a.name ?? "Tenant A"}</CardTitle>
@@ -1317,12 +1944,18 @@ export default function ComparePage() {
                 </Card>
               </div>
             )}
-            {selectedTenantItem.comparison && (
-              <Card className="border-primary/30 mt-4">
+	            {selectedTenantItem.comparison && (
+	              <Card className="border-primary/30 mt-4">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm">Settings Difference Summary</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-xs text-muted-foreground">
+                  <p>
+                    Category: {categoryLabel(selectedPolicyCategory)} ({selectedCategoryItems.length} policies)
+                  </p>
+                  <p>
+                    Category totals | Same settings: {selectedCategorySummary.same_settings} | Different settings: {selectedCategorySummary.different_settings} | Missing in {tenantResult?.tenant_a.name ?? "Tenant A"}: {selectedCategorySummary.missing_in_tenant_a} | Missing in {tenantResult?.tenant_b.name ?? "Tenant B"}: {selectedCategorySummary.missing_in_tenant_b} | Duplicate: {selectedCategorySummary.duplicate}
+                  </p>
                   <p>
                     Same: {selectedTenantItem.comparison.same_settings_count} | Different values: {selectedTenantItem.comparison.different_values_count} | Only A: {selectedTenantItem.comparison.only_in_tenant_a_count} | Only B: {selectedTenantItem.comparison.only_in_tenant_b_count}
                   </p>
@@ -1336,13 +1969,15 @@ export default function ComparePage() {
                       ))}
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            )}
-          </div>
-        </div>
-      )}
+	                </CardContent>
+	              </Card>
+	            )}
+              </div>
+	          </div>
+	        </div>
+	      )}
     </div>
   );
 }
+
 

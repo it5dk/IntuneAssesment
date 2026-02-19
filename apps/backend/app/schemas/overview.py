@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from pydantic import BaseModel
 from uuid import UUID
@@ -46,4 +46,5 @@ class OverviewOut(BaseModel):
     success_rate: float
     recent_drifts: list[RecentDrift]
     monitor_status: list[MonitorStatus]
+
 

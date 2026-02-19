@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from app.collectors.entra_users import collect_entra_users
 from app.collectors.entra_groups import collect_entra_groups
@@ -34,4 +34,5 @@ COLLECTOR_MAP: dict[str, callable] = {
     "microsoft.graph.mobileAppAssessment": collect_app_assignments,
     "intune.groupAssignment": collect_group_policy_assignments,
 }
+
 

@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import uuid
 from datetime import datetime, timezone
@@ -31,4 +31,5 @@ class Snapshot(Base):
 
     monitor = relationship("Monitor", back_populates="snapshots", foreign_keys=[monitor_id])
     items = relationship("SnapshotItem", back_populates="snapshot", cascade="all, delete-orphan")
+
 

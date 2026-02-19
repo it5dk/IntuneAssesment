@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from pydantic import BaseModel
 from uuid import UUID
@@ -68,4 +68,5 @@ class MonitorOut(BaseModel):
     resource_count: int = 0
 
     model_config = {"from_attributes": True}
+
 

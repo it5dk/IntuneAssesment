@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from uuid import UUID
 from datetime import datetime, timezone
@@ -67,4 +67,5 @@ async def resolve_drift(drift_id: UUID, db: AsyncSession = Depends(get_db)):
     drift.resolved_at = datetime.now(timezone.utc)
     await db.flush()
     return {"status": "ok", "drift_id": str(drift_id)}
+
 

@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -64,4 +64,5 @@ async def set_baseline(snapshot_id: UUID, db: AsyncSession = Depends(get_db)):
     monitor.baseline_snapshot_id = snapshot_id
     await db.flush()
     return {"status": "ok", "baseline_snapshot_id": str(snapshot_id)}
+
 

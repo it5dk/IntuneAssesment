@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 """initial schema
 
@@ -153,4 +153,5 @@ def downgrade() -> None:
     op.drop_table("monitors")
     op.drop_table("snapshots")
     op.drop_table("templates")
+
 

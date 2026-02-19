@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 """add assessment_changes table
 
@@ -54,4 +54,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("assessment_changes")
+
 

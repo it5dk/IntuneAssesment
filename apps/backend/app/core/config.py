@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from pydantic_settings import BaseSettings
 from typing import List
@@ -43,4 +43,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
 

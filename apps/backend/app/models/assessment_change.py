@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import uuid
 from datetime import datetime, timezone
@@ -36,4 +36,5 @@ class AssessmentChange(Base):
     stamp_result: Mapped[str | None] = mapped_column(Text, nullable=True)
     ticket_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
 

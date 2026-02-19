@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from app.models.template import Template
 from app.models.monitor import Monitor
@@ -34,4 +34,5 @@ __all__ = [
     "IgnoreRule",
     "AssessmentChange",
 ]
+
 

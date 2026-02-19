@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import hashlib
 import json
@@ -34,4 +34,5 @@ def normalize_resource(raw: dict, fields: list[str]) -> dict:
 
 
 CollectedItem = dict[str, Any]  # {resource_id, resource_type, display_name, raw_json, normalized, hash}
+
 

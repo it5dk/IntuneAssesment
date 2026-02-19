@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -353,4 +353,5 @@ async def get_assignment_logs(
         ],
         "total": len(logs),
     }
+
 

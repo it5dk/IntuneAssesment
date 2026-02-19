@@ -11,7 +11,7 @@
 //  BEGIN USER NOTES
 //  Your notes here. We will NEVER change this block.
 //  END USER NOTES
- */ END AUTODOC HEADER
+ */
 
 import { Sidebar } from "@/components/sidebar";
 
@@ -23,4 +23,5 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     </div>
   );
 }
+
 

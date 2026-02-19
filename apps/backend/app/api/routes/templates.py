@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,4 +34,5 @@ async def list_templates(db: AsyncSession = Depends(get_db)):
 async def seed(db: AsyncSession = Depends(get_db)):
     templates = await seed_templates(db)
     return templates
+
 

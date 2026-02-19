@@ -11,7 +11,7 @@
 #  BEGIN USER NOTES
 #  Your notes here. We will NEVER change this block.
 #  END USER NOTES
-""" END AUTODOC HEADER
+"""
 
 import uuid
 from datetime import datetime, timezone
@@ -41,4 +41,5 @@ class Monitor(Base):
     snapshots = relationship("Snapshot", back_populates="monitor", foreign_keys="Snapshot.monitor_id")
     baseline_snapshot = relationship("Snapshot", foreign_keys=[baseline_snapshot_id], post_update=True)
     drifts = relationship("Drift", back_populates="monitor")
+
 
