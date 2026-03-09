@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -13,6 +13,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       })
   );
+
+  useEffect(() => {
+    const clearData = () => {
+      queryClient.clear();
+    };
+    window.addEventListener("tenant-data-reload", clearData);
+    return () => {
+      window.removeEventListener("tenant-data-reload", clearData);
+    };
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -28,25 +28,225 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-type ViewTab = "all" | "identical" | "modified" | "added" | "removed";
 type TenantStatusFilter = "all" | "match" | "not_match" | "duplicate";
 type TenantSubStatusFilter = "all" | "same_settings" | "different_settings" | "missing_in_tenant_a" | "missing_in_tenant_b" | "duplicate_settings";
 type TenantCategoryFilter = "all" | "intune_compliance" | "intune_device_configuration" | "conditional_access" | "other";
 type TenantPolicyItem = CompareTenantsResponse["policy_items"][number];
 type DetailViewMode = "plain" | "json";
+type BaselineMetricFilter = "mapped" | "same" | "different" | "missing";
 type NonCodeRow = { setting: string; path: string; a: string; b: string; result: "same" | "different" | "only_a" | "only_b" };
 type ExtractedSetting = { label: string; value: string };
+type BaselineCatalogItem = {
+  id: string;
+  family: string;
+  versions: string[];
+  prerequisite?: string;
+  policyHints: string[];
+  fixUrl: string;
+  fixSteps: string[];
+};
+type BaselineSecurityRecommendation = {
+  name: string;
+  status: "At risk" | "Meets standard" | "Not applicable";
+  product: string;
+  whatToDo: string[];
+  howToFix: string[];
+  guideUrl: string;
+};
 const TENANT_COMPARE_PREFS_KEY = "compare_tenant_prefs_v1";
+const GLOBAL_TENANT_CONNECTION_KEY = "global_tenant_connection_v1";
+const GLOBAL_TENANT_SECRET_SESSION_KEY = "global_tenant_connection_secret_v1";
+const BASELINE_CATALOG: BaselineCatalogItem[] = [
+  {
+    id: "windows_10_later",
+    family: "Security Baseline for Windows 10 and later",
+    versions: ["Version 24H2", "Version 23H2", "November 2021", "December 2020", "August 2020"],
+    policyHints: ["windows", "endpoint analytics", "device configuration", "settings catalog"],
+    fixUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines-configure",
+    fixSteps: [
+      "Create or update the Windows 10 and later baseline profile.",
+      "Review each setting marked different and align it to your approved baseline version.",
+      "Assign baseline to target groups and verify assignment status.",
+    ],
+  },
+  {
+    id: "defender_endpoint",
+    family: "Microsoft Defender for Endpoint baseline",
+    versions: ["Version 24H1", "Version 6", "Version 5", "Version 4", "Version 3"],
+    prerequisite: "To use this baseline, your environment must meet prerequisites for Microsoft Defender for Endpoint.",
+    policyHints: ["defender", "antimalware", "endpoint", "security", "compliance"],
+    fixUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines-configure",
+    fixSteps: [
+      "Validate Microsoft Defender for Endpoint prerequisite integration.",
+      "Deploy the Defender baseline and align different settings.",
+      "Confirm devices report compliant/expected Defender posture.",
+    ],
+  },
+  {
+    id: "m365_apps",
+    family: "Microsoft 365 Apps for Enterprise baseline",
+    versions: ["Version 2306 (Office baseline)", "May 2023 (Office baseline)"],
+    policyHints: ["microsoft 365 apps", "office", "app configuration"],
+    fixUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines-configure",
+    fixSteps: [
+      "Create/update Microsoft 365 Apps baseline profile.",
+      "Standardize conflicting app hardening values across policies.",
+      "Re-run baseline analysis after policy sync.",
+    ],
+  },
+  {
+    id: "edge_baseline",
+    family: "Microsoft Edge Baseline",
+    versions: [
+      "Microsoft Edge version 128 - January 2025",
+      "Microsoft Edge version 117 - November 2023",
+      "Microsoft Edge version 112 and later - May 2023",
+      "Microsoft Edge version 85 and later - September 2020",
+      "Microsoft Edge version 80 and later - April 2020",
+      "Preview: Microsoft Edge version 77 and later - October 2019",
+    ],
+    policyHints: ["edge", "browser"],
+    fixUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines-configure",
+    fixSteps: [
+      "Deploy Microsoft Edge baseline for your supported Edge version.",
+      "Resolve setting drift in browser security controls.",
+      "Validate policy assignment and client check-in.",
+    ],
+  },
+  {
+    id: "hololens_advanced",
+    family: "HoloLens 2 - Advanced security baseline settings",
+    versions: ["Version 1 - HoloLens 2 advanced security - January 2025"],
+    policyHints: ["hololens", "hololens 2", "windows holographic", "mixed reality", "holographic"],
+    fixUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines",
+    fixSteps: [
+      "Confirm HoloLens device platform is enrolled and targeted.",
+      "Deploy advanced HoloLens baseline profile.",
+      "Review unsupported settings and adjust assignment scope.",
+    ],
+  },
+  {
+    id: "hololens_standard",
+    family: "HoloLens 2 - Standard security baseline settings",
+    versions: ["Version 1 - HoloLens 2 standard security - January 2025"],
+    policyHints: ["hololens", "hololens 2", "windows holographic", "mixed reality", "holographic"],
+    fixUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines",
+    fixSteps: [
+      "Deploy standard HoloLens baseline profile for baseline coverage.",
+      "Compare existing HoloLens settings and remove conflicting duplicates.",
+      "Verify check-in and policy assignment results.",
+    ],
+  },
+  {
+    id: "windows_365",
+    family: "Windows 365 Security Baseline",
+    versions: ["Version 24H1", "November 2021"],
+    policyHints: ["windows 365", "windows365", "cloud pc", "cloudpc", "frontline cloud pc"],
+    fixUrl: "https://learn.microsoft.com/en-us/windows-365/enterprise/intune-security-baselines",
+    fixSteps: [
+      "Confirm Windows 365 Cloud PCs are managed in Intune.",
+      "Create/update Windows 365 security baseline profile.",
+      "Align Cloud PC policies with approved baseline values and re-run analysis.",
+    ],
+  },
+];
+const BASELINE_SECURITY_RECOMMENDATIONS: BaselineSecurityRecommendation[] = [
+  {
+    name: "Block new password credentials in apps",
+    status: "At risk",
+    product: "Entra ID",
+    whatToDo: [
+      "Block app registrations from adding new password credentials where possible.",
+      "Use certificate-based credentials or managed identities for app auth.",
+    ],
+    howToFix: [
+      "Review app registration credential policies in Entra ID.",
+      "Rotate existing weak secrets and enforce expiration/ownership policy.",
+      "Update automation to certificate or workload identity auth.",
+    ],
+    guideUrl: "https://learn.microsoft.com/en-us/entra/identity-platform/howto-create-service-principal-portal",
+  },
+  {
+    name: "Turn on restricted management user consent settings",
+    status: "At risk",
+    product: "Entra ID",
+    whatToDo: [
+      "Restrict user consent to trusted apps/permissions only.",
+      "Require admin review for risky OAuth permissions.",
+    ],
+    howToFix: [
+      "Configure user consent settings under Enterprise Applications consent policies.",
+      "Enable admin consent workflow for new requests.",
+      "Review existing app grants and remove risky ones.",
+    ],
+    guideUrl: "https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent",
+  },
+  {
+    name: "Block access to Exchange Web Services",
+    status: "At risk",
+    product: "Exchange",
+    whatToDo: [
+      "Disable legacy EWS access patterns not required by business workloads.",
+      "Allow only approved service accounts/apps where exception is needed.",
+    ],
+    howToFix: [
+      "Update Exchange authentication policies to block EWS for users.",
+      "Add scoped exceptions only for validated dependencies.",
+      "Monitor sign-in and mailbox access logs for EWS usage after change.",
+    ],
+    guideUrl: "https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online",
+  },
+  {
+    name: "Block basic authentication prompts",
+    status: "Meets standard",
+    product: "Microsoft 365 apps",
+    whatToDo: [
+      "Keep modern authentication enforced for Office clients.",
+      "Prevent users from falling back to basic auth prompts.",
+    ],
+    howToFix: [
+      "Verify tenant and app settings still enforce modern auth.",
+      "Audit exceptions periodically and remove legacy carve-outs.",
+    ],
+    guideUrl: "https://learn.microsoft.com/en-us/microsoft-365/enterprise/disable-basic-authentication-in-exchange-online",
+  },
+  {
+    name: "Block unmanaged devices and resource account sign-ins to Microsoft 365 apps",
+    status: "Not applicable",
+    product: "Teams",
+    whatToDo: [
+      "Apply only if Teams Rooms/resource account model is used.",
+      "Require compliant/managed device context for production access.",
+    ],
+    howToFix: [
+      "Create Conditional Access policy scoped to resource accounts and apps.",
+      "Exclude only approved break-glass accounts and document exceptions.",
+    ],
+    guideUrl: "https://learn.microsoft.com/en-us/microsoftteams/rooms/security",
+  },
+];
+
+function recommendationFallback(name: string, status: string, product: string): BaselineSecurityRecommendation {
+  return {
+    name,
+    status: (status === "At risk" || status === "Meets standard" || status === "Not applicable") ? status : "At risk",
+    product,
+    whatToDo: [
+      "Review current setting value in baseline security mode.",
+      "Compare current value to Microsoft recommended standard for this control.",
+    ],
+    howToFix: [
+      "Apply recommended value in security baseline mode.",
+      "Validate assignment scope and client impact, then re-check status.",
+    ],
+    guideUrl: "https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines",
+  };
+}
 
 export default function ComparePage() {
   const NON_CODE_PAGE_SIZE = 120;
-  const [snapA, setSnapA] = useState("");
-  const [snapB, setSnapB] = useState("");
-  const [activeTab, setActiveTab] = useState<ViewTab>("all");
-  const [activeModule, setActiveModule] = useState<"policy-comparison" | "baseline" | "bulk" | "tenant" | "baseline-security">("policy-comparison");
-  const policyComparisonRef = useRef<HTMLDivElement>(null);
+  const [activeModule, setActiveModule] = useState<"baseline" | "tenant" | "baseline-security">("tenant");
   const baselineRef = useRef<HTMLDivElement>(null);
-  const bulkRef = useRef<HTMLDivElement>(null);
   const tenantRef = useRef<HTMLDivElement>(null);
   const baselineSecurityRef = useRef<HTMLDivElement>(null);
   const [tenantALabel, setTenantALabel] = useState("Tenant A");
@@ -66,8 +266,13 @@ export default function ComparePage() {
   const [isTenantDetailOpen, setIsTenantDetailOpen] = useState(false);
   const [detailViewMode, setDetailViewMode] = useState<DetailViewMode>("plain");
   const [nonCodePage, setNonCodePage] = useState(1);
+  const [useGlobalTenantA, setUseGlobalTenantA] = useState(false);
+  const [baselineRunAt, setBaselineRunAt] = useState<string | null>(null);
+  const [baselineRunning, setBaselineRunning] = useState(false);
+  const [baselineMetricView, setBaselineMetricView] = useState<{ baselineId: string; metric: BaselineMetricFilter } | null>(null);
+  const [selectedBaselineSecurityRec, setSelectedBaselineSecurityRec] = useState<BaselineSecurityRecommendation | null>(null);
 
-  useEffect(() => {
+  const loadTenantComparePrefs = () => {
     try {
       const raw = window.localStorage.getItem(TENANT_COMPARE_PREFS_KEY);
       if (!raw) return;
@@ -88,6 +293,42 @@ export default function ComparePage() {
     } catch {
       // Ignore invalid local cache data.
     }
+  };
+
+  const loadGlobalTenantConnection = () => {
+    try {
+      const raw = window.localStorage.getItem(GLOBAL_TENANT_CONNECTION_KEY);
+      if (!raw) {
+        setUseGlobalTenantA(false);
+        return;
+      }
+      const saved = JSON.parse(raw) as {
+        label?: string;
+        tenantId?: string;
+        clientId?: string;
+      };
+      const hasAll = Boolean(saved.tenantId && saved.clientId);
+      setUseGlobalTenantA(hasAll);
+      if (!hasAll) return;
+      if (saved.label) setTenantALabel(saved.label);
+      if (saved.tenantId) setTenantATenantId(saved.tenantId);
+      if (saved.clientId) setTenantAClientId(saved.clientId);
+      const secret = window.sessionStorage.getItem(GLOBAL_TENANT_SECRET_SESSION_KEY);
+      if (secret) setTenantAClientSecret(secret);
+    } catch {
+      setUseGlobalTenantA(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTenantComparePrefs();
+    loadGlobalTenantConnection();
+    const onUpdated = () => {
+      loadTenantComparePrefs();
+      loadGlobalTenantConnection();
+    };
+    window.addEventListener("tenant-connection-updated", onUpdated);
+    return () => window.removeEventListener("tenant-connection-updated", onUpdated);
   }, []);
 
   useEffect(() => {
@@ -108,30 +349,37 @@ export default function ComparePage() {
     }
   }, [tenantALabel, tenantATenantId, tenantAClientId, tenantBLabel, tenantBTenantId, tenantBClientId]);
 
-  const { data: snapshots } = useQuery({
-    queryKey: ["snapshots"],
-    queryFn: () => api.getSnapshots(),
+  const buildComparePayload = (override?: {
+    tenant_a?: {
+      label: string;
+      tenant_id: string;
+      client_id: string;
+      client_secret: string;
+    };
+    tenant_b?: {
+      label: string;
+      tenant_id: string;
+      client_id: string;
+      client_secret: string;
+    };
+  }) => ({
+    tenant_a: override?.tenant_a ?? {
+      label: tenantALabel || "Tenant A",
+      tenant_id: tenantATenantId,
+      client_id: tenantAClientId,
+      client_secret: tenantAClientSecret,
+    },
+    tenant_b: override?.tenant_b ?? {
+      label: tenantBLabel || "Tenant B",
+      tenant_id: tenantBTenantId,
+      client_id: tenantBClientId,
+      client_secret: tenantBClientSecret,
+    },
   });
 
-  const compareMutation = useMutation({
-    mutationFn: () => api.compareSnapshots(snapA, snapB),
-  });
+
   const compareTenantsMutation = useMutation({
-    mutationFn: () =>
-      api.compareTenants({
-        tenant_a: {
-          label: tenantALabel || "Tenant A",
-          tenant_id: tenantATenantId,
-          client_id: tenantAClientId,
-          client_secret: tenantAClientSecret,
-        },
-        tenant_b: {
-          label: tenantBLabel || "Tenant B",
-          tenant_id: tenantBTenantId,
-          client_id: tenantBClientId,
-          client_secret: tenantBClientSecret,
-        },
-      }),
+    mutationFn: (payload: Parameters<typeof api.compareTenants>[0]) => api.compareTenants(payload),
     onSuccess: () => {
       toast.success("Tenant comparison completed");
     },
@@ -141,8 +389,139 @@ export default function ComparePage() {
     },
   });
 
-  const result = compareMutation.data;
   const tenantResult = compareTenantsMutation.data;
+  const runBaselineAnalysis = async () => {
+    let aLabel = tenantALabel.trim() || "Tenant A";
+    let aTenantId = tenantATenantId.trim();
+    let aClientId = tenantAClientId.trim();
+    let aSecret = tenantAClientSecret.trim();
+
+    try {
+      const raw = window.localStorage.getItem(GLOBAL_TENANT_CONNECTION_KEY);
+      const saved = raw ? (JSON.parse(raw) as { label?: string; tenantId?: string; clientId?: string }) : null;
+      const sessionSecret = window.sessionStorage.getItem(GLOBAL_TENANT_SECRET_SESSION_KEY) || "";
+      if (saved?.tenantId && saved?.clientId && sessionSecret) {
+        aLabel = saved.label || "Connected Tenant";
+        aTenantId = saved.tenantId;
+        aClientId = saved.clientId;
+        aSecret = sessionSecret;
+        setTenantALabel(aLabel);
+        setTenantATenantId(aTenantId);
+        setTenantAClientId(aClientId);
+        setTenantAClientSecret(aSecret);
+      }
+    } catch {
+      // fallback to current in-memory tenant A fields
+    }
+
+    if (!aTenantId || !aClientId || !aSecret) {
+      toast.error("Connect tenant first (tenant ID, client ID, and client secret are required).");
+      return;
+    }
+
+    setBaselineRunning(true);
+    try {
+      await compareTenantsMutation.mutateAsync(
+        buildComparePayload({
+          tenant_a: {
+            label: aLabel,
+            tenant_id: aTenantId,
+            client_id: aClientId,
+            client_secret: aSecret,
+          },
+          tenant_b: {
+            label: "Baseline check tenant",
+            tenant_id: aTenantId,
+            client_id: aClientId,
+            client_secret: aSecret,
+          },
+        }),
+      );
+      const now = new Date().toISOString();
+      setBaselineRunAt(now);
+      toast.success("Baseline analysis completed");
+    } catch {
+      // compareTenantsMutation already emits detailed toast on error
+    } finally {
+      setBaselineRunning(false);
+    }
+  };
+
+  const baselineCoverage = BASELINE_CATALOG.map((baseline) => {
+    const itemSearchText = (item: TenantPolicyItem) => {
+      const sourceA = item.tenant_a_data ? JSON.stringify(item.tenant_a_data).toLowerCase() : "";
+      const sourceB = item.tenant_b_data ? JSON.stringify(item.tenant_b_data).toLowerCase() : "";
+      return [
+        item.policy_type.toLowerCase(),
+        item.policy_name.toLowerCase(),
+        (item.tenant_a_policy_name ?? "").toLowerCase(),
+        (item.tenant_b_policy_name ?? "").toLowerCase(),
+        item.reason.toLowerCase(),
+        sourceA,
+        sourceB,
+      ].join(" ");
+    };
+    // Baseline analysis is single-tenant focused (connected tenant), so de-duplicate
+    // by policy identity from tenant A to avoid mirrored A/B artifacts.
+    const unique = new Map<string, TenantPolicyItem>();
+    (tenantResult?.policy_items ?? []).forEach((item) => {
+      const id = item.tenant_a_ids?.[0] || item.policy_key;
+      const name = item.tenant_a_policy_name || item.policy_name;
+      const key = `${item.policy_type}|${name}|${id}`;
+      if (!unique.has(key)) unique.set(key, item);
+    });
+    const items = Array.from(unique.values()).filter((item) => {
+      const text = itemSearchText(item);
+      return baseline.policyHints.some((hint) => text.includes(hint));
+    });
+    const same = items.filter((i) => i.sub_status === "same_settings" || i.status === "match" || i.status === "duplicate").length;
+    const different = items.filter((i) => i.sub_status === "different_settings" || i.status === "not_match").length;
+    const missing = items.length === 0 ? 1 : 0;
+    const status: "covered" | "partial" | "gap" =
+      items.length === 0 ? "gap" : different > 0 ? "partial" : "covered";
+    return {
+      ...baseline,
+      totalMappedPolicies: items.length,
+      same,
+      different,
+      missing,
+      status,
+      items,
+      sameItems: items.filter((i) => i.sub_status === "same_settings" || i.status === "match" || i.status === "duplicate"),
+      differentItems: items.filter((i) => i.sub_status === "different_settings" || i.status === "not_match"),
+      gapItems: items.filter((i) =>
+        i.sub_status === "different_settings" ||
+        i.status === "not_match",
+      ),
+    };
+  });
+  const baselineItemStatus = (item: TenantPolicyItem) => {
+    if (item.sub_status === "different_settings" || item.status === "not_match") return "different_settings";
+    if (item.sub_status === "missing_in_tenant_a" || item.sub_status === "missing_in_tenant_b") return "unmatched_policy";
+    return item.sub_status || item.status;
+  };
+  const baselineItemReason = (item: TenantPolicyItem) => {
+    const raw = item.reason || "";
+    if (item.sub_status === "missing_in_tenant_a" || item.sub_status === "missing_in_tenant_b") {
+      return "No settings-similar baseline pair found in connected tenant policy set.";
+    }
+    return raw;
+  };
+  const baselineGapOutput = baselineCoverage
+    .map((baseline) => ({
+      id: baseline.id,
+      family: baseline.family,
+      status: baseline.status,
+      missing: baseline.missing,
+      different: baseline.different,
+      totalMappedPolicies: baseline.totalMappedPolicies,
+      fixUrl: baseline.fixUrl,
+      fixSteps: baseline.fixSteps,
+      policyTypes: Array.from(new Set(baseline.gapItems.map((i) => i.policy_type))).slice(0, 6),
+      items: baseline.gapItems,
+    }))
+    .filter((baseline) => baseline.status === "gap" || baseline.status === "partial");
+
   const policyCategory = (policyType: string): TenantCategoryFilter => {
     const p = policyType.toLowerCase();
     if (
@@ -207,11 +586,6 @@ export default function ComparePage() {
         if (byStatus !== 0) return byStatus;
         return a.policy_name.localeCompare(b.policy_name);
       });
-  const samePolicies = tenantResult?.policy_items.filter((i) => i.sub_status === "same_settings") ?? [];
-  const differentPolicies = tenantResult?.policy_items.filter((i) => i.sub_status === "different_settings") ?? [];
-  const missingInTenantA = tenantResult?.policy_items.filter((i) => i.sub_status === "missing_in_tenant_a") ?? [];
-  const missingInTenantB = tenantResult?.policy_items.filter((i) => i.sub_status === "missing_in_tenant_b") ?? [];
-
   const openTenantDetail = (item: TenantPolicyItem) => {
     setSelectedTenantItem(item);
     setIsTenantDetailOpen(true);
@@ -457,6 +831,58 @@ export default function ComparePage() {
     return out;
   };
 
+  const isConditionalAccessPolicy = (policy: Record<string, unknown>) => {
+    const odataType = typeof policy["@odata.type"] === "string" ? policy["@odata.type"].toLowerCase() : "";
+    if (odataType.includes("conditionalaccesspolicy")) return true;
+    return !!policy.conditions && (!!policy.grantControls || !!policy.sessionControls || typeof policy.state === "string");
+  };
+
+  const extractLeafValues = (
+    node: unknown,
+    basePath: string,
+    push: (path: string, value: unknown) => void,
+  ) => {
+    if (node === null || node === undefined) return;
+    if (typeof node === "string" || typeof node === "number" || typeof node === "boolean") {
+      push(basePath, node);
+      return;
+    }
+    if (Array.isArray(node)) {
+      const allScalar = node.every((x) => x === null || x === undefined || typeof x === "string" || typeof x === "number" || typeof x === "boolean");
+      if (allScalar) {
+        const values = node.filter((x) => x !== null && x !== undefined).map((x) => stringifySettingValue(x));
+        push(basePath, values.join("; "));
+        return;
+      }
+      node.forEach((item, idx) => extractLeafValues(item, `${basePath}[${idx}]`, push));
+      return;
+    }
+    if (typeof node === "object") {
+      Object.entries(node as Record<string, unknown>).forEach(([k, v]) => {
+        const next = basePath ? `${basePath}.${k}` : k;
+        extractLeafValues(v, next, push);
+      });
+    }
+  };
+
+  const extractConditionalAccessSettings = (policy: Record<string, unknown>, map: Map<string, ExtractedSetting>, policyIdx: number) => {
+    if (!isConditionalAccessPolicy(policy)) return;
+    const keyPrefix = `policy[${policyIdx}]:ca`;
+    const roots: Array<[string, unknown]> = [
+      ["state", policy.state],
+      ["conditions", policy.conditions],
+      ["grantControls", policy.grantControls],
+      ["sessionControls", policy.sessionControls],
+    ];
+
+    roots.forEach(([rootName, rootValue]) => {
+      if (rootValue === undefined || rootValue === null) return;
+      extractLeafValues(rootValue, rootName, (path, value) => {
+        addExtracted(map, `${keyPrefix}:${path}`, `CA ${path}`, value);
+      });
+    });
+  };
+
   const prettifyDirectKey = (raw: string) => {
     return raw
       .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -592,6 +1018,7 @@ export default function ComparePage() {
       const settings = Array.isArray(policy._settings) ? policy._settings : [];
       settings.forEach((s, sIdx) => extractSettingsFromNode(s, out, `_settings[${sIdx}]`));
       extractDirectPolicySettings(policy, out, policyIdx);
+      extractConditionalAccessSettings(policy, out, policyIdx);
     });
 
     return out;
@@ -828,42 +1255,7 @@ export default function ComparePage() {
       </div>
 
       {/* Feature cards - matching IntuneAssistant */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            setActiveModule("policy-comparison");
-            policyComparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setActiveModule("policy-comparison");
-              policyComparisonRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-          }}
-          className="text-left"
-        >
-        <Card className={`border-primary/30 transition-colors ${activeModule === "policy-comparison" ? "border-primary/70" : "hover:border-primary/40"}`}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Badge variant={activeModule === "policy-comparison" ? "default" : "secondary"} className="text-[10px]">
-                {activeModule === "policy-comparison" ? "ACTIVE" : "CORE"}
-              </Badge>
-            </div>
-            <CardTitle className="text-lg">Policy Comparison</CardTitle>
-            <CardDescription>Compare two configuration policies side-by-side with detailed analysis of differences, similarities, and unique settings.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-xs text-muted-foreground">
-              <li className="flex items-center gap-2"><Equal className="h-3.5 w-3.5 text-emerald-400" /> Side-by-side comparison</li>
-              <li className="flex items-center gap-2"><Search className="h-3.5 w-3.5 text-blue-400" /> Child settings analysis</li>
-              <li className="flex items-center gap-2"><BarChart3 className="h-3.5 w-3.5 text-amber-400" /> Visual change indicators</li>
-            </ul>
-          </CardContent>
-        </Card>
-        </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <div
           role="button"
           tabIndex={0}
@@ -895,41 +1287,6 @@ export default function ComparePage() {
               <li className="flex items-center gap-2"><Target className="h-3.5 w-3.5" /> Security baseline validation</li>
               <li className="flex items-center gap-2"><Filter className="h-3.5 w-3.5" /> Compliance gap analysis</li>
               <li className="flex items-center gap-2"><Zap className="h-3.5 w-3.5" /> Best practice recommendations</li>
-            </ul>
-          </CardContent>
-        </Card>
-        </div>
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => {
-            setActiveModule("bulk");
-            bulkRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setActiveModule("bulk");
-              bulkRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }
-          }}
-          className="text-left"
-        >
-        <Card className={`transition-colors ${activeModule === "bulk" ? "border-primary/70" : "opacity-70 hover:opacity-100"}`}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <Badge variant={activeModule === "bulk" ? "default" : "secondary"} className="text-[10px]">
-                {activeModule === "bulk" ? "ACTIVE" : "CORE"}
-              </Badge>
-            </div>
-            <CardTitle className="text-lg">Bulk Comparison</CardTitle>
-            <CardDescription>Compare multiple policies simultaneously with a multi-policy comparison matrix and standardization insights.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2 text-xs text-muted-foreground">
-              <li className="flex items-center gap-2"><Layers className="h-3.5 w-3.5" /> Multi-policy matrix</li>
-              <li className="flex items-center gap-2"><GitCompareArrows className="h-3.5 w-3.5" /> Standardization insights</li>
-              <li className="flex items-center gap-2"><BarChart3 className="h-3.5 w-3.5" /> Pattern analysis</li>
             </ul>
           </CardContent>
         </Card>
@@ -1006,63 +1363,6 @@ export default function ComparePage() {
         </div>
       </div>
 
-      {activeModule === "policy-comparison" && (
-        <div ref={policyComparisonRef}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Equal className="h-5 w-5 text-emerald-400" />
-                Policy Comparison Workspace
-              </CardTitle>
-              <CardDescription>
-                Compare two configuration policies side-by-side with detailed analysis of differences, similarities, and unique settings.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Side-by-side comparison</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">Snapshot A vs Snapshot B</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Select two snapshots below to compare policy resources and values directly.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Child settings analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">
-                      {result ? result.modified.reduce((sum, item) => sum + item.changes.length, 0) : 0} child setting deltas
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Inspects nested setting changes to highlight specific path-level differences.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Visual change indicators</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">
-                      Modified: {result?.summary.modified ?? 0} | Added: {result?.summary.added ?? 0} | Removed: {result?.summary.removed ?? 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Uses status color coding in results to quickly identify change type and impact.
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
       {activeModule === "baseline" && (
         <div ref={baselineRef}>
           <Card>
@@ -1076,96 +1376,235 @@ export default function ComparePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Security baseline validation</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">Baseline checks: {result ? result.summary.identical + result.summary.modified : 0}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Validates compared policies against expected baseline-aligned configuration posture.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Compliance gap analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">Potential gaps: {result ? result.summary.modified + result.summary.removed : 0}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Highlights drift and missing controls that may create compliance deviations.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Best practice recommendations</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">Focus areas: report modified and removed settings first</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Prioritize high-impact differences and align policy values with approved baseline standards.
-                    </p>
-                  </CardContent>
-                </Card>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button
+                  onClick={() => runBaselineAnalysis()}
+                  disabled={baselineRunning}
+                >
+                  <Target className="mr-2 h-4 w-4" />
+                  {baselineRunning ? "Running analysis..." : "Run Baseline Analysis"}
+                </Button>
+                <div className="text-xs text-muted-foreground">
+                  {baselineRunAt ? `Last run: ${new Date(baselineRunAt).toLocaleString()}` : "Not run yet"}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {activeModule === "bulk" && (
-        <div ref={bulkRef}>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Layers className="h-5 w-5 text-amber-400" />
-                Bulk Comparison Workspace
-              </CardTitle>
-              <CardDescription>
-                Compare multiple policies simultaneously with a multi-policy comparison matrix and standardization insights.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Multi-policy matrix</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">Available snapshots: {snapshots?.length ?? 0}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Build a matrix view by selecting multiple snapshots and comparing shared policy resources.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Standardization insights</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">Identical baseline matches: {result?.summary.identical ?? 0}</p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Highlights where policy values are already standardized and where normalization is needed.
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-primary/30">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Pattern analysis</CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm">
-                    <p className="font-semibold">
-                      Divergence patterns: {(result?.summary.modified ?? 0) + (result?.summary.removed ?? 0)}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Detects repeated change patterns to guide bulk remediation and alignment efforts.
-                    </p>
-                  </CardContent>
-                </Card>
+              <Card className="border-primary/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Source</CardTitle>
+                  <CardDescription>Available security baselines from Microsoft Learn.</CardDescription>
+                </CardHeader>
+                <CardContent className="text-xs">
+                  <a
+                    href="https://learn.microsoft.com/en-us/intune/intune-service/protect/security-baselines"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Open baseline catalog reference
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </CardContent>
+              </Card>
+              <div className="grid grid-cols-1 gap-4">
+                {baselineCoverage.map((baseline) => (
+                  <Card key={baseline.id} className="border-primary/30">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-sm">{baseline.family}</CardTitle>
+                        <Badge
+                          variant={
+                            baseline.status === "covered"
+                              ? "success"
+                              : baseline.status === "partial"
+                                ? "warning"
+                                : baseline.status === "gap"
+                                  ? "danger"
+                                  : "secondary"
+                          }
+                        >
+                          {baseline.status}
+                        </Badge>
+                      </div>
+                      {baseline.prerequisite ? (
+                        <CardDescription>{baseline.prerequisite}</CardDescription>
+                      ) : null}
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="text-xs">
+                        <p className="mb-1 text-muted-foreground">Available versions</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {baseline.versions.map((version) => (
+                            <Badge key={`${baseline.id}:${version}`} variant="outline" className="text-[11px]">
+                              {version}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                        <button
+                          type="button"
+                          onClick={() => setBaselineMetricView({ baselineId: baseline.id, metric: "mapped" })}
+                          className="rounded-md border p-2 text-left hover:bg-accent/20"
+                        >
+                          <p className="text-muted-foreground">Mapped policies</p>
+                          <p className="font-semibold">{baseline.totalMappedPolicies}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBaselineMetricView({ baselineId: baseline.id, metric: "same" })}
+                          className="rounded-md border p-2 text-left hover:bg-accent/20"
+                        >
+                          <p className="text-muted-foreground">Same</p>
+                          <p className="font-semibold text-emerald-400">{baseline.same}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBaselineMetricView({ baselineId: baseline.id, metric: "different" })}
+                          className="rounded-md border p-2 text-left hover:bg-accent/20"
+                        >
+                          <p className="text-muted-foreground">Different</p>
+                          <p className="font-semibold text-amber-400">{baseline.different}</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setBaselineMetricView({ baselineId: baseline.id, metric: "missing" })}
+                          className="rounded-md border p-2 text-left hover:bg-accent/20"
+                        >
+                          <p className="text-muted-foreground">Missing</p>
+                          <p className="font-semibold text-red-400">{baseline.missing}</p>
+                        </button>
+                      </div>
+                      {baselineMetricView?.baselineId === baseline.id ? (
+                        <div className="rounded-md border p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-medium">
+                              {baselineMetricView.metric === "mapped" && "Mapped Policies"}
+                              {baselineMetricView.metric === "same" && "Same Policies"}
+                              {baselineMetricView.metric === "different" && "Different Policies"}
+                              {baselineMetricView.metric === "missing" && "Missing Coverage"}
+                            </p>
+                            <Button variant="outline" size="sm" onClick={() => setBaselineMetricView(null)}>Close</Button>
+                          </div>
+                          <div className="space-y-1 text-xs">
+                            {(baselineMetricView.metric === "mapped" ? baseline.items
+                              : baselineMetricView.metric === "same" ? baseline.sameItems
+                              : baselineMetricView.metric === "different" ? baseline.differentItems
+                              : baseline.missing > 0 ? [] : []
+                            ).slice(0, 120).map((item) => (
+                              <button
+                                type="button"
+                                key={`baseline-list:${baseline.id}:${item.policy_key}`}
+                                onClick={() => openTenantDetail(item)}
+                                className="w-full rounded border px-2 py-1 text-left hover:bg-accent/20"
+                              >
+                                <p className="font-medium">{item.tenant_a_policy_name || item.policy_name}</p>
+                                <p className="text-muted-foreground">{item.policy_type} · {baselineItemStatus(item)}</p>
+                                <p className="text-muted-foreground">{baselineItemReason(item)}</p>
+                              </button>
+                            ))}
+                            {baselineMetricView.metric === "missing" ? (
+                              baseline.missing > 0 ? (
+                                <div className="rounded border px-2 py-2">
+                                  <p className="font-medium">No mapped policies found for this baseline in connected tenant.</p>
+                                  <p className="text-muted-foreground">Create and assign the related baseline profile to remove this gap.</p>
+                                </div>
+                              ) : (
+                                <p className="text-muted-foreground">No missing coverage for this baseline.</p>
+                              )
+                            ) : null}
+                            {baselineMetricView.metric !== "missing" && (baselineMetricView.metric === "mapped" ? baseline.items.length
+                              : baselineMetricView.metric === "same" ? baseline.sameItems.length
+                              : baseline.differentItems.length) === 0 ? (
+                              <p className="text-muted-foreground">No policies in this category.</p>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+                    </CardContent>
+                  </Card>
+                ))}
               </div>
+              {baselineRunAt ? (
+                <Card className="border-primary/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Gap & Missing Output</CardTitle>
+                    <CardDescription>
+                      Baseline analysis output for missing and drifted controls.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3 text-xs">
+                    {baselineGapOutput.length === 0 ? (
+                      <p className="text-muted-foreground">No gap or missing items found in this run.</p>
+                    ) : (
+                      baselineGapOutput.map((baseline) => (
+                        <div key={`gap:${baseline.family}`} className="rounded-md border p-3 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-medium">{baseline.family}</p>
+                            <Badge
+                              variant={
+                                baseline.status === "gap"
+                                  ? "danger"
+                                  : baseline.status === "partial"
+                                    ? "warning"
+                                    : "secondary"
+                              }
+                            >
+                              {baseline.status}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground">
+                            Mapped: {baseline.totalMappedPolicies} | Different: {baseline.different} | Missing: {baseline.missing}
+                          </p>
+                          <div className="rounded border p-2 space-y-1">
+                            <p className="font-medium">How to fix</p>
+                            {baseline.fixSteps.map((step) => (
+                              <p key={`fix-step:${baseline.family}:${step}`} className="text-muted-foreground">
+                                • {step}
+                              </p>
+                            ))}
+                            <a
+                              href={baseline.fixUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary hover:underline inline-flex items-center gap-1"
+                            >
+                              Open remediation guide
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
+                          {baseline.policyTypes.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {baseline.policyTypes.map((type) => (
+                                <Badge key={`gap-type:${baseline.family}:${type}`} variant="outline" className="text-[11px]">
+                                  {type}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : null}
+                          {baseline.items.length > 0 ? (
+                            <div className="space-y-1">
+                              {baseline.items.slice(0, 8).map((item) => (
+                                <div key={`gap-item:${baseline.family}:${item.policy_key}`} className="rounded border px-2 py-1 text-xs">
+                                  <p className="font-medium">{item.policy_name}</p>
+                                  <p className="text-muted-foreground">
+                                    {item.policy_type} · {baselineItemStatus(item)}
+                                  </p>
+                                  <p className="text-muted-foreground">{baselineItemReason(item)}</p>
+                                </div>
+                              ))}
+                              {baseline.items.length > 8 ? (
+                                <p className="text-muted-foreground">+{baseline.items.length - 8} more items</p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <p className="text-muted-foreground">No mapped policies found for this baseline in the connected tenant.</p>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              ) : null}
             </CardContent>
           </Card>
         </div>
@@ -1184,6 +1623,20 @@ export default function ComparePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {useGlobalTenantA ? (
+                <Card className="border-primary/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Tenant B</CardTitle>
+                    <CardDescription>Tenant A uses the globally connected tenant from sidebar.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <input value={tenantBLabel} onChange={(e) => setTenantBLabel(e.target.value)} placeholder="Label (optional)" className="w-full rounded-lg border bg-background px-3 py-2 text-sm" />
+                    <input value={tenantBTenantId} onChange={(e) => setTenantBTenantId(e.target.value)} placeholder="Tenant ID" className="w-full rounded-lg border bg-background px-3 py-2 text-sm" />
+                    <input value={tenantBClientId} onChange={(e) => setTenantBClientId(e.target.value)} placeholder="Client ID" className="w-full rounded-lg border bg-background px-3 py-2 text-sm" />
+                    <input type="password" value={tenantBClientSecret} onChange={(e) => setTenantBClientSecret(e.target.value)} placeholder="Client Secret" className="w-full rounded-lg border bg-background px-3 py-2 text-sm" />
+                  </CardContent>
+                </Card>
+              ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Card className="border-primary/30">
                   <CardHeader className="pb-2">
@@ -1208,9 +1661,10 @@ export default function ComparePage() {
                   </CardContent>
                 </Card>
               </div>
-              <div className="flex justify-center">
+              )}
+              <div className="flex justify-center gap-2">
                 <Button
-                  onClick={() => compareTenantsMutation.mutate()}
+                  onClick={() => compareTenantsMutation.mutate(buildComparePayload())}
                   disabled={
                     compareTenantsMutation.isPending ||
                     !tenantATenantId || !tenantAClientId || !tenantAClientSecret ||
@@ -1221,6 +1675,16 @@ export default function ComparePage() {
                   <Zap className="mr-2 h-4 w-4" />
                   {compareTenantsMutation.isPending ? "Connecting & Comparing..." : "Compare Tenants"}
                 </Button>
+                {tenantResult ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => compareTenantsMutation.mutate(buildComparePayload())}
+                    disabled={compareTenantsMutation.isPending}
+                    size="lg"
+                  >
+                    Re-sync
+                  </Button>
+                ) : null}
               </div>
               <Card className="border-primary/30">
                 <CardHeader className="pb-2">
@@ -1245,103 +1709,6 @@ export default function ComparePage() {
                     <Card><CardContent className="p-5 text-center"><p className="text-3xl font-bold text-red-400">{tenantResult.summary.duplicate}</p><p className="text-xs text-muted-foreground mt-1">Duplicate</p></CardContent></Card>
                     <Card><CardContent className="p-5 text-center"><p className="text-3xl font-bold text-blue-400">{tenantResult.summary.total_policies_compared}</p><p className="text-xs text-muted-foreground mt-1">Policies compared</p></CardContent></Card>
                   </div>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Tenant Coverage</CardTitle>
-                      <CardDescription>
-                        {tenantResult.tenant_a.name}: {tenantResult.tenant_a.resource_count} policies | {tenantResult.tenant_b.name}: {tenantResult.tenant_b.resource_count} policies
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Policy Type Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-2">
-                      {tenantResult.policy_type_summary.map((row) => (
-                        <div key={row.policy_type} className="rounded-md border p-3 flex items-center justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium">{row.policy_type}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {tenantResult.tenant_a.name}: {row.tenant_a_total} | {tenantResult.tenant_b.name}: {row.tenant_b_total}
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            Match {row.match} | Not match {row.not_match} | Duplicate {row.duplicate}
-                          </p>
-                        </div>
-                      ))}
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-base">Comparison Highlights</CardTitle>
-                      <CardDescription>
-                        Same policies, policies with settings differences, and policies missing in tenant A or tenant B.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      <div className="rounded-md border border-primary/30 p-3">
-                        <p className="text-sm font-medium">Same ({samePolicies.length})</p>
-                        <div className="mt-3 space-y-2">
-                          {samePolicies.slice(0, 5).map((item) => (
-                            <div
-                              key={`same:${item.policy_type}:${item.policy_key}`}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
-                            >
-                              <span className="truncate">{item.policy_name} · {item.policy_type}</span>
-                              <Badge variant="success">same</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="rounded-md border border-primary/30 p-3">
-                        <p className="text-sm font-medium">Different settings ({differentPolicies.length})</p>
-                        <div className="mt-3 space-y-2">
-                          {differentPolicies.slice(0, 5).map((item) => (
-                            <div
-                              key={`diff:${item.policy_type}:${item.policy_key}`}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
-                            >
-                              <span className="truncate">{item.policy_name} · {item.policy_type}</span>
-                              <Badge variant="warning">different</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="rounded-md border border-primary/30 p-3">
-                        <p className="text-sm font-medium">Missing in {tenantResult.tenant_a.name} ({missingInTenantA.length})</p>
-                        <div className="mt-3 space-y-2">
-                          {missingInTenantA.slice(0, 5).map((item) => (
-                            <div
-                              key={`ma:${item.policy_type}:${item.policy_key}`}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
-                            >
-                              <span className="truncate">{item.policy_name} · {item.policy_type}</span>
-                              <Badge variant="danger">missing A</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="rounded-md border border-primary/30 p-3">
-                        <p className="text-sm font-medium">Missing in {tenantResult.tenant_b.name} ({missingInTenantB.length})</p>
-                        <div className="mt-3 space-y-2">
-                          {missingInTenantB.slice(0, 5).map((item) => (
-                            <div
-                              key={`mb:${item.policy_type}:${item.policy_key}`}
-                              className="w-full rounded-md border p-2 text-xs flex items-center justify-between gap-2 text-left"
-                            >
-                              <span className="truncate">{item.policy_name} · {item.policy_type}</span>
-                              <Badge variant="danger">missing B</Badge>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-base">Policy Match List</CardTitle>
@@ -1549,7 +1916,17 @@ export default function ComparePage() {
                     ["Block unmanaged devices and resource account sign-ins to Microsoft 365 apps", "Not applicable", "Teams"],
                     ["Don't allow resource accounts on Teams Rooms devices from accessing Microsoft 365 files", "Not applicable", "Teams"],
                   ].map(([name, status, product]) => (
-                    <div key={name} className="rounded-md border p-3 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      key={name}
+                      onClick={() =>
+                        setSelectedBaselineSecurityRec(
+                          BASELINE_SECURITY_RECOMMENDATIONS.find((r) => r.name === name) ??
+                          recommendationFallback(name, status, product),
+                        )
+                      }
+                      className="w-full rounded-md border p-3 flex items-center justify-between gap-3 text-left hover:bg-accent/20"
+                    >
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{name}</p>
                         <p className="text-xs text-muted-foreground mt-1">{product}</p>
@@ -1557,7 +1934,7 @@ export default function ComparePage() {
                       <Badge variant={status === "At risk" ? "warning" : status === "Meets standard" ? "success" : "secondary"}>
                         {status}
                       </Badge>
-                    </div>
+                    </button>
                   ))}
                 </CardContent>
               </Card>
@@ -1566,215 +1943,61 @@ export default function ComparePage() {
         </div>
       )}
 
-      {/* Capability highlights */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <CardContent className="p-5">
-            <Equal className="h-5 w-5 text-emerald-400 mb-2" />
-            <p className="font-medium text-sm">Identical Settings</p>
-            <p className="text-xs text-muted-foreground mt-1">Find settings that match across snapshots</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <GitCompareArrows className="h-5 w-5 text-amber-400 mb-2" />
-            <p className="font-medium text-sm">Conflicting Values</p>
-            <p className="text-xs text-muted-foreground mt-1">Detect values that differ between snapshots</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <Filter className="h-5 w-5 text-blue-400 mb-2" />
-            <p className="font-medium text-sm">Smart Filtering</p>
-            <p className="text-xs text-muted-foreground mt-1">Filter by change type, severity, and category</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <Search className="h-5 w-5 text-purple-400 mb-2" />
-            <p className="font-medium text-sm">Deep Analysis</p>
-            <p className="text-xs text-muted-foreground mt-1">Property-level diff for every resource</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Snapshot selector */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <GitCompareArrows className="h-5 w-5" />
-            Start Comparing
-          </CardTitle>
-          <CardDescription>Select two snapshots to compare side-by-side</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_auto_1fr]">
-            <div>
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Snapshot A (Baseline)</label>
-              <select
-                value={snapA}
-                onChange={(e) => setSnapA(e.target.value)}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              >
-                <option value="">Select snapshot...</option>
-                {snapshots?.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.id.slice(0, 8)}... ({s.resource_count} resources) - {new Date(s.created_at).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
+      {selectedBaselineSecurityRec ? (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto">
+          <div className="mx-auto w-[min(920px,96vw)] rounded-2xl border border-primary/30 bg-background shadow-2xl">
+            <div className="border-b border-border/60 px-4 py-4 sm:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold leading-tight">Recommendation Detail</p>
+                  <p className="text-xs text-muted-foreground truncate">{selectedBaselineSecurityRec.name}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setSelectedBaselineSecurityRec(null)}>
+                  <X className="h-4 w-4 mr-1" />
+                  Close
+                </Button>
+              </div>
             </div>
-            <div className="flex items-end justify-center pb-1">
-              <ArrowRight className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-muted-foreground mb-2 block">Snapshot B (Current)</label>
-              <select
-                value={snapB}
-                onChange={(e) => setSnapB(e.target.value)}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            <div className="space-y-4 p-4 sm:p-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={selectedBaselineSecurityRec.status === "At risk" ? "warning" : selectedBaselineSecurityRec.status === "Meets standard" ? "success" : "secondary"}>
+                  {selectedBaselineSecurityRec.status}
+                </Badge>
+                <Badge variant="outline">{selectedBaselineSecurityRec.product}</Badge>
+              </div>
+              <Card className="border-primary/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">What To Do</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1 text-sm text-muted-foreground">
+                  {selectedBaselineSecurityRec.whatToDo.map((line) => (
+                    <p key={`todo:${selectedBaselineSecurityRec.name}:${line}`}>• {line}</p>
+                  ))}
+                </CardContent>
+              </Card>
+              <Card className="border-primary/30">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">How To Fix</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1 text-sm text-muted-foreground">
+                  {selectedBaselineSecurityRec.howToFix.map((line) => (
+                    <p key={`fix:${selectedBaselineSecurityRec.name}:${line}`}>• {line}</p>
+                  ))}
+                </CardContent>
+              </Card>
+              <a
+                href={selectedBaselineSecurityRec.guideUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary hover:underline inline-flex items-center gap-1 text-sm"
               >
-                <option value="">Select snapshot...</option>
-                {snapshots?.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.id.slice(0, 8)}... ({s.resource_count} resources) - {new Date(s.created_at).toLocaleDateString()}
-                  </option>
-                ))}
-              </select>
+                Open Microsoft guidance
+                <ExternalLink className="h-4 w-4" />
+              </a>
             </div>
           </div>
-          <div className="mt-4 flex justify-center">
-            <Button
-              onClick={() => compareMutation.mutate()}
-              disabled={!snapA || !snapB || snapA === snapB || compareMutation.isPending}
-              size="lg"
-            >
-              <Zap className="mr-2 h-4 w-4" />
-              {compareMutation.isPending ? "Comparing..." : "Start Comparing"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Results */}
-      {result && (
-        <>
-          {/* Summary stats */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Card><CardContent className="p-5 text-center"><p className="text-3xl font-bold text-emerald-400">{result.summary.identical}</p><p className="text-xs text-muted-foreground mt-1">Identical</p></CardContent></Card>
-            <Card><CardContent className="p-5 text-center"><p className="text-3xl font-bold text-amber-400">{result.summary.modified}</p><p className="text-xs text-muted-foreground mt-1">Modified</p></CardContent></Card>
-            <Card><CardContent className="p-5 text-center"><p className="text-3xl font-bold text-blue-400">{result.summary.added}</p><p className="text-xs text-muted-foreground mt-1">Added</p></CardContent></Card>
-            <Card><CardContent className="p-5 text-center"><p className="text-3xl font-bold text-red-400">{result.summary.removed}</p><p className="text-xs text-muted-foreground mt-1">Removed</p></CardContent></Card>
-          </div>
-
-          {/* Filter tabs */}
-          <div className="flex gap-2 flex-wrap">
-            {([
-              { key: "all", label: "All", count: result.summary.identical + result.summary.modified + result.summary.added + result.summary.removed },
-              { key: "identical", label: "Identical", count: result.summary.identical },
-              { key: "modified", label: "Modified", count: result.summary.modified },
-              { key: "added", label: "Added", count: result.summary.added },
-              { key: "removed", label: "Removed", count: result.summary.removed },
-            ] as const).map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                  activeTab === tab.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {tab.label} ({tab.count})
-              </button>
-            ))}
-          </div>
-
-          {/* Identical */}
-          {(activeTab === "all" || activeTab === "identical") && result.identical.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-emerald-400"><Equal className="h-5 w-5" />Identical ({result.identical.length})</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {result.identical.map((item) => (
-                    <div key={item.resource_id} className="flex items-center justify-between rounded-lg border border-emerald-500/20 p-3">
-                      <div><p className="text-sm font-medium">{item.display_name}</p><p className="text-xs text-muted-foreground font-mono">{item.resource_type}</p></div>
-                      <Badge variant="success">Identical</Badge>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Modified */}
-          {(activeTab === "all" || activeTab === "modified") && result.modified.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-amber-400"><BarChart3 className="h-5 w-5" />Modified ({result.modified.length})</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {result.modified.map((item) => (
-                    <div key={item.resource_id} className="rounded-lg border border-amber-500/20 p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div><p className="font-medium">{item.display_name}</p><p className="text-xs text-muted-foreground font-mono">{item.resource_type}</p></div>
-                        <Badge variant="warning">{item.changes.length} changes</Badge>
-                      </div>
-                      <div className="space-y-2">
-                        {item.changes.map((ch, idx) => (
-                          <div key={idx} className="rounded-md bg-background p-3 text-sm">
-                            <p className="font-mono text-xs text-muted-foreground mb-1">{ch.json_path}</p>
-                            <div className="flex items-center gap-3">
-                              {ch.old_value !== null && <span className="rounded bg-red-500/10 px-2 py-0.5 text-xs text-red-400 break-all">{ch.old_value}</span>}
-                              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                              {ch.new_value !== null && <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400 break-all">{ch.new_value}</span>}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Added */}
-          {(activeTab === "all" || activeTab === "added") && result.added.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-blue-400"><Plus className="h-5 w-5" />Added ({result.added.length})</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {result.added.map((item) => (
-                    <div key={item.resource_id} className="rounded-lg border border-blue-500/20 p-3">
-                      <div className="flex items-center justify-between">
-                        <div><p className="text-sm font-medium">{item.display_name}</p><p className="text-xs text-muted-foreground font-mono">{item.resource_type}</p></div>
-                        <Badge variant="info">Added</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Removed */}
-          {(activeTab === "all" || activeTab === "removed") && result.removed.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2 text-red-400"><Minus className="h-5 w-5" />Removed ({result.removed.length})</CardTitle></CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {result.removed.map((item) => (
-                    <div key={item.resource_id} className="rounded-lg border border-red-500/20 p-3">
-                      <div className="flex items-center justify-between">
-                        <div><p className="text-sm font-medium">{item.display_name}</p><p className="text-xs text-muted-foreground font-mono">{item.resource_type}</p></div>
-                        <Badge variant="danger">Removed</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
+        </div>
+      ) : null}
 
       {selectedTenantItem && isTenantDetailOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm p-2 sm:p-4 md:p-6 overflow-y-auto">

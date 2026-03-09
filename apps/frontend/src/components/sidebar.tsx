@@ -17,6 +17,7 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { TenantConnectButton } from "@/components/tenant-connect-button";
 
 interface NavItem {
   label: string;
@@ -94,8 +95,11 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="border-t px-6 py-4">
+        <TenantConnectButton />
+        <div className="mt-3">
         <p className="text-xs text-muted-foreground">Drift Control v1.0</p>
         <p className="text-xs text-muted-foreground">Single Tenant</p>
+        </div>
       </div>
     </aside>
   );

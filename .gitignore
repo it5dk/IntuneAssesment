@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+
+# VS Code
+.vscode/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log
+
+# Docker
+*.env
+
+# Node
+node_modules/
+.next/
+
+# Temporary
+.tmp_testmeta.json
+
+# Archives
+VERSIONS/
