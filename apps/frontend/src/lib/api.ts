@@ -259,6 +259,52 @@ export const api = {
     request<ZeroTrustUserAssessment>(`/zero-trust/user-assessment?user_key=${encodeURIComponent(userKey)}&lookback_days=${lookbackDays}`),
   getIdentityRun: () => request<IdentityRunResponse>("/identity/run"),
   getDevicesRun: () => request<IdentityRunResponse>("/devices/run"),
+
+  // Key Vault
+  getCertificates: () => request<CertificatesResponse>("/certificates"),
+  getAccessPolicies: () => request<AccessPoliciesResponse>("/certificates/access-policies"),
+
+  // Device Compliance
+  getDeviceCompliance: () => request<DeviceComplianceResponse>("/device-compliance"),
+
+  // Privileged Access
+  getPrivilegedAccess: () => request<PrivilegedAccessResponse>("/privileged-access"),
+
+  // Endpoint Protection
+  getEndpointProtection: () => request<EndpointProtectionResponse>("/endpoint-protection"),
+
+  // Security Alerts
+  getSecurityAlerts: () => request<SecurityAlertsResponse>("/security-alerts"),
+
+  // Threat Analytics
+  getThreatAnalytics: () => request<ThreatAnalyticsResponse>("/threat-analytics"),
+
+  // Audit Logs
+  getAuditLogs: () => request<AuditLogsResponse>("/audit-logs"),
+
+  // Automation
+  getAutomation: () => request<AutomationResponse>("/automation"),
+
+  // Drift Detection
+  getDriftDetection: () => request<DriftDetectionResponse>("/drift-detection"),
+
+  // Security Score
+  getSecurityScore: () => request<SecurityScoreResponse>("/security-score"),
+
+  // Policy Conflicts
+  getPolicyConflicts: () => request<PolicyConflictsResponse>("/policy-conflicts"),
+
+  // Tenant Risk
+  getTenantRisk: () => request<TenantRiskResponse>("/tenant-risk"),
+
+  // Expiring Permissions
+  getExpiringPermissions: () => request<ExpiringPermissionsResponse>("/expiring-permissions"),
+
+  // Inactive Admins
+  getInactiveAdmins: () => request<InactiveAdminsResponse>("/inactive-admins"),
+
+  // Shadow Apps
+  getShadowApps: () => request<ShadowAppsResponse>("/shadow-apps"),
 };
 
 // New types for added features
@@ -727,4 +773,215 @@ export interface IdentityRunResponse {
   };
   controls: IdentityTheme[];
   ideas_to_add_more: string[];
+}
+
+// Certificates & Secrets
+export interface CertificateEntry {
+  id: string;
+  category: string;
+  type: string;
+  name: string;
+  detail: string;
+  app_id: string | null;
+  expires: string | null;
+  days_remaining: number | null;
+  status: "expired" | "critical" | "warning" | "healthy" | "unknown";
+}
+
+export interface CertificatesSummary {
+  total: number;
+  expired: number;
+  critical: number;
+  warning: number;
+  healthy: number;
+}
+
+export interface CertificatesResponse {
+  certificates: CertificateEntry[];
+  summary: CertificatesSummary;
+  errors: { source: string; error: string }[];
+}
+
+export interface AccessPolicyEntry {
+  id: string;
+  app_name: string;
+  app_id: string;
+  resource_name: string;
+  resource_app_id: string;
+  application_permissions: number;
+  delegated_permissions: number;
+  total_permissions: number;
+  permission_ids: string[];
+}
+
+export interface AccessPoliciesResponse {
+  policies: AccessPolicyEntry[];
+  total: number;
+  errors: { source: string; error: string }[];
+}
+
+// Device Compliance
+export interface DeviceComplianceResponse {
+  data: {
+    noncompliant: { id: string; device_name: string; os: string; os_version: string; user: string; last_sync: string | null; model: string; manufacturer: string }[];
+    policies: { id: string; name: string; description: string; last_modified: string | null; version: number | null }[];
+    jailbroken: { id: string; device_name: string; os: string; os_version: string; user: string; last_sync: string | null }[];
+  };
+  summary: { noncompliant: number; compliant: number; jailbroken: number; total_policies: number };
+  errors: { source: string; error: string }[];
+}
+
+// Privileged Access
+export interface PrivilegedAccessResponse {
+  data: {
+    role_assignments: { id: string; role_name: string; role_id: string; member_name: string; member_upn: string; member_id: string }[];
+    pim_activations: { id: string; action: string; principal_id: string; role_definition_id: string; status: string; created: string | null; schedule: unknown }[];
+    alerts: { id: string; principal_id: string; role_definition_id: string; status: string; created: string | null; type: string }[];
+  };
+  summary: { total_roles: number; total_assignments: number; active_pim: number; alerts: number };
+  errors: { source: string; error: string }[];
+}
+
+// Endpoint Protection
+export interface EndpointProtectionResponse {
+  data: {
+    antivirus: { id: string; name: string; category: string; severity: string; state: string; last_change: string | null; device_count: number }[];
+    firewall: { id: string; name: string; description: string; last_modified: string | null; version: number | null }[];
+    encryption: { id: string; name: string; description: string; last_modified: string | null; version: number | null }[];
+    asr: { id: string; name: string; description: string; last_modified: string | null; version: number | null }[];
+  };
+  summary: { malware_detections: number; firewall_policies: number; encryption_policies: number; encrypted_devices: number; unencrypted_devices: number; asr_policies: number };
+  errors: { source: string; error: string }[];
+}
+
+// Security Alerts
+export interface SecurityAlertsResponse {
+  data: {
+    active: { id: string; title: string; severity: string; status: string; category: string; created: string | null; description: string; sources: string[] }[];
+    resolved: { id: string; title: string; severity: string; status: string; category: string; created: string | null; resolved: string | null; description: string }[];
+    trends: { date: string; count: number }[];
+  };
+  summary: { active: number; resolved: number; high_severity: number; medium_severity: number; low_severity: number };
+  errors: { source: string; error: string }[];
+}
+
+// Threat Analytics
+export interface ThreatAnalyticsResponse {
+  data: {
+    threats: { id: string; title: string; severity: string; status: string; category: string; created: string | null; description: string }[];
+    secure_score: { current_score: number; max_score: number; created: string | null; average_comparative_score: number } | null;
+    insights: { category: string; count: number; high: number; medium: number; low: number }[];
+  };
+  summary: { active_threats: number; secure_score: number | null; max_score: number | null; high_risk: number; categories: number };
+  errors: { source: string; error: string }[];
+}
+
+// Audit Logs
+export interface AuditLogsResponse {
+  data: {
+    directory: AuditLogEntry[];
+    policy: AuditLogEntry[];
+    device: AuditLogEntry[];
+    admin: AuditLogEntry[];
+  };
+  summary: { total_events: number; directory_changes: number; policy_changes: number; device_actions: number; admin_activity: number };
+  errors: { source: string; error: string }[];
+}
+
+export interface AuditLogEntry {
+  id: string;
+  activity: string;
+  category: string;
+  result: string;
+  actor: string;
+  target: { name: string; type: string; id: string };
+  timestamp: string | null;
+}
+
+// Automation
+export interface AutomationResponse {
+  data: {
+    remediation: { id: string; name: string; description: string; last_modified: string | null; action_count: number; actions: { rule_name: string; notification_templates: number }[] }[];
+    runbooks: { id: string; name: string; description: string; file_name: string; run_as: string; signature_check: boolean; created: string | null; last_modified: string | null }[];
+    playbooks: { id: string; name: string; description: string; publisher: string; is_global: boolean; created: string | null; last_modified: string | null }[];
+  };
+  summary: { remediation_policies: number; scripts: number; playbooks: number };
+  errors: { source: string; error: string }[];
+}
+
+// Drift Detection
+export interface DriftDetectionResponse {
+  data: {
+    policies: { id: string; name: string; description: string; created: string; last_modified: string; version: number; drifted: boolean }[];
+    profiles: { id: string; name: string; description: string; created: string; last_modified: string; version: number; drifted: boolean }[];
+    apps: { id: string; name: string; description: string; created: string; last_modified: string; version: number; drifted: boolean }[];
+  };
+  summary: { total_profiles: number; drifted_profiles: number; total_policies: number; drifted_policies: number; total_apps: number; drifted_apps: number; total_drifted: number };
+  errors: { source: string; error: string }[];
+}
+
+// Security Score
+export interface SecurityScoreResponse {
+  data: {
+    history: { date: string; current_score: number; max_score: number; average_score: number }[];
+    controls: { id: string; title: string; description: string; max_score: number; current_score: number; category: string; state: string; service: string; tier: string; user_impact: string; implementation_cost: string }[];
+    current: { current_score: number; max_score: number; average_score: number; date: string | null; enabled_services: string[] } | null;
+  };
+  summary: { current_score: number | null; max_score: number | null; average_score: number | null; trend: string; history_points: number; controls_count: number };
+  errors: { source: string; error: string }[];
+}
+
+// Policy Conflicts
+export interface PolicyConflictsResponse {
+  data: {
+    conflicts: { id: string; group_id: string; policy_type: string; policy_count: number; policies: { id: string; name: string }[]; severity: string }[];
+    overlaps: { id: string; group_id: string; total_policies: number; by_type: Record<string, number>; policies: { id: string; name: string; type: string }[] }[];
+    unassigned: { id: string; name: string; type: string }[];
+  };
+  summary: { total_conflicts: number; high_severity: number; medium_severity: number; total_overlaps: number; unassigned_policies: number };
+  errors: { source: string; error: string }[];
+}
+
+// Tenant Risk
+export interface TenantRiskResponse {
+  data: {
+    risk_factors: { factor: string; severity: string; points: number }[];
+    risky_users: { id: string; name: string; upn: string; risk_level: string; risk_state: string; risk_detail: string; last_updated: string | null }[];
+    risky_signins: { id: string; name: string; risk_level: string; risk_state: string; last_updated: string | null }[];
+  };
+  summary: { risk_score: number; max_score: number; risk_percentage: number; grade: string; risky_users: number; risky_service_principals: number; risk_factors: number };
+  errors: { source: string; error: string }[];
+}
+
+// Expiring Permissions
+export interface ExpiringPermissionsResponse {
+  data: {
+    oauth_grants: { id: string; client_id: string; consent_type: string; principal_id: string | null; resource_id: string; scope: string; expires: string | null; days_remaining: number | null; status: string }[];
+    app_role_assignments: { id: string; principal_name: string; principal_id: string; resource_name: string; created: string | null }[];
+    expiring_secrets: { id: string; app_name: string; app_id: string; type: string; hint: string; expires: string | null; days_remaining: number | null; status: string }[];
+  };
+  summary: { total_grants: number; expiring_grants: number; expiring_secrets: number; app_role_assignments: number; expired: number; critical: number };
+  errors: { source: string; error: string }[];
+}
+
+// Inactive Admins
+export interface InactiveAdminsResponse {
+  data: {
+    inactive: { id: string; name: string; upn: string; enabled: boolean; roles: string[]; last_signin: string | null; days_inactive: number | null }[];
+    never_signed_in: { id: string; name: string; upn: string; enabled: boolean; roles: string[]; last_signin: string | null; days_inactive: number | null }[];
+    disabled_admins: { id: string; name: string; upn: string; enabled: boolean; roles: string[]; last_signin: string | null; days_inactive: number | null }[];
+  };
+  summary: { total_admins: number; inactive_30d: number; never_signed_in: number; disabled_admins: number };
+  errors: { source: string; error: string }[];
+}
+
+// Shadow Apps
+export interface ShadowAppsResponse {
+  data: {
+    user_consented: { id: string; app_name: string; user_count: number; scopes: string[]; scope_count: number }[];
+    high_privilege: { id: string; app_name: string; app_id: string; publisher: string; verified: boolean; owner_tenant: string; created: string | null; days_old: number | null }[];
+    stale_apps: { id: string; app_name: string; app_id: string; created: string | null; days_old: number | null }[];
+  };
+  summary: { user_consented_apps: number; third_party_apps: number; stale_apps: number; total_shadow: number };
+  errors: { source: string; error: string }[];
 }

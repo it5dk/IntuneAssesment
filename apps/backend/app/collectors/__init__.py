@@ -32,6 +32,7 @@ COLLECTOR_MAP: dict[str, callable] = {
     "microsoft.graph.managedDevice": collect_managed_devices,
     "microsoft.graph.deviceConfiguration": collect_device_configurations,
     "microsoft.graph.mobileAppAssessment": collect_app_assignments,
+    "microsoft.graph.mobileAppAssignment": collect_app_assignments,
     "intune.groupAssignment": collect_group_policy_assignments,
 }
 

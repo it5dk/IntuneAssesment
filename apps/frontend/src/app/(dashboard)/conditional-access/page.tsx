@@ -565,9 +565,7 @@ export default function ConditionalAccessPage() {
               <Lock className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <p className="text-muted-foreground mb-4">No Conditional Access policies loaded</p>
               {!caMonitor ? (
-                <Link href="/templates">
-                  <Button>Create CA Monitor from Template</Button>
-                </Link>
+                <p className="text-sm text-muted-foreground">No CA monitor configured</p>
               ) : (
                 <Button onClick={() => runMutation.mutate()} disabled={runMutation.isPending}>
                   Scan Policies

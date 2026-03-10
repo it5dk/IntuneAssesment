@@ -25,7 +25,19 @@
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr list --repo it5dk/DriftControl)",
       "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" pr view 1 --repo it5dk/DriftControl)",
       "Bash(find:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(sed 's/.*graph_client\\\\.//')",
+      "Bash(sed \"s/\\(.*//\")",
+      "Bash(npm run build)",
+      "Bash(npm install)",
+      "Bash(npx next build)",
+      "Bash(pip show fastapi httpx)",
+      "Bash(grep -o '\"\"the error[^\"\"]*' \"C:\\\\Users\\\\okban\\\\.claude\\\\projects\\\\c--1Sync-OneDrive---Secbase-Oktaj-Work-Intune-Assistent-IntuneAssesment\\\\1331db74-a317-46d0-bc62-acab54f5c428.jsonl\")",
+      "Bash(grep -oP 'same like before[^\"\"\\\\\\\\]*|same error[^\"\"\\\\\\\\]*|before.*error[^\"\"\\\\\\\\]{0,100}' \"C:\\\\Users\\\\okban\\\\.claude\\\\projects\\\\c--1Sync-OneDrive---Secbase-Oktaj-Work-Intune-Assistent-IntuneAssesment\\\\1331db74-a317-46d0-bc62-acab54f5c428.jsonl\")",
+      "Bash(node -e \":*)",
+      "Bash(node -e \"const fs=require\\(''fs''\\); const data=fs.readFileSync\\(''C:\\\\\\\\Users\\\\\\\\okban\\\\\\\\.claude\\\\\\\\projects\\\\\\\\c--1Sync-OneDrive---Secbase-Oktaj-Work-Intune-Assistent-IntuneAssesment\\\\\\\\1331db74-a317-46d0-bc62-acab54f5c428.jsonl'',''utf8''\\); const lines=data.split\\(''\\\\n''\\).filter\\(Boolean\\); for\\(const line of lines\\){try{const obj=JSON.parse\\(line\\);if\\(obj.type===''human''\\){const c=obj.message?.content;if\\(typeof c===''string''&&c.length>5\\){console.log\\(c.substring\\(0,300\\)\\);console.log\\(''---''\\);}else if\\(Array.isArray\\(c\\)\\){for\\(const x of c\\){if\\(x.type===''text''&&x.text\\){console.log\\(x.text.substring\\(0,300\\)\\);console.log\\(''---''\\);}}}}}catch\\(e\\){}}\")",
+      "Bash(TRANSCRIPT=\"/c/Users/okban/.claude/projects/c--1Sync-OneDrive---Secbase-Oktaj-Work-Intune-Assistent-IntuneAssesment/1331db74-a317-46d0-bc62-acab54f5c428.jsonl\")",
+      "Read(//c/1Sync/OneDrive - Secbase/Oktaj/Work/Intune-Assistent/IntuneAssesment/**)"
     ]
   }
 }

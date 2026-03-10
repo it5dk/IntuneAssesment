@@ -5,16 +5,26 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
-  GitCompareArrows,
-  Radio,
-  Camera,
-  LayoutTemplate,
+  KeyRound,
   Shield,
   Lock,
   Settings,
   Monitor,
   Users,
   ArrowLeftRight,
+  ShieldCheck,
+  Crown,
+  AlertTriangle,
+  Activity,
+  FileText,
+  Zap,
+  GitCompare,
+  Gauge,
+  Swords,
+  Thermometer,
+  Clock,
+  UserX,
+  Ghost,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { TenantConnectButton } from "@/components/tenant-connect-button";
@@ -36,11 +46,26 @@ const navItems: NavItem[] = [
   { label: "Conditional Access", href: "/conditional-access", icon: Lock },
   { label: "Compare Policies", href: "/compare", icon: ArrowLeftRight },
 
-  // Drift Control
-  { label: "Drift Control", href: "/drifts", icon: GitCompareArrows, section: "Drift Control" },
-  { label: "Monitors", href: "/monitors", icon: Radio },
-  { label: "Snapshots", href: "/snapshots", icon: Camera },
-  { label: "Templates", href: "/templates", icon: LayoutTemplate },
+  // Security
+  { label: "Key Vault", href: "/drifts", icon: KeyRound, section: "Security" },
+  { label: "Device Compliance", href: "/device-compliance", icon: ShieldCheck },
+  { label: "Privileged Access", href: "/privileged-access", icon: Crown },
+  { label: "Endpoint Protection", href: "/endpoint-protection", icon: Shield },
+  { label: "Security Alerts", href: "/security-alerts", icon: AlertTriangle },
+  { label: "Threat Analytics", href: "/threat-analytics", icon: Activity },
+  { label: "Audit Logs", href: "/audit-logs", icon: FileText },
+
+  // Intelligence
+  { label: "Drift Detection", href: "/drift-detection", icon: GitCompare, section: "Intelligence" },
+  { label: "Security Score", href: "/security-score", icon: Gauge },
+  { label: "Policy Conflicts", href: "/policy-conflicts", icon: Swords },
+  { label: "Tenant Risk", href: "/tenant-risk", icon: Thermometer },
+  { label: "Expiring Permissions", href: "/expiring-permissions", icon: Clock },
+  { label: "Inactive Admins", href: "/inactive-admins", icon: UserX },
+  { label: "Shadow Apps", href: "/shadow-apps", icon: Ghost },
+
+  // Automation
+  { label: "Automation", href: "/automation", icon: Zap, section: "Automation" },
 ];
 
 export function Sidebar() {

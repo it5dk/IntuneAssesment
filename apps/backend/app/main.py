@@ -18,7 +18,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.logging import setup_logging
-from app.api.routes import health, templates, monitors, snapshots, drifts, overview, devices, compare, configuration, assignments, groups, assessment_manager, zero_trust, identity
+from app.api.routes import health, templates, monitors, snapshots, drifts, overview, devices, compare, configuration, assignments, groups, assessment_manager, zero_trust, identity, certificates, device_compliance, privileged_access, endpoint_protection, security_alerts, threat_analytics, audit_logs, automation, drift_detection, security_score, policy_conflicts, tenant_risk, expiring_permissions, inactive_admins, shadow_apps
 
 
 @asynccontextmanager
@@ -56,5 +56,20 @@ app.include_router(groups.router)
 app.include_router(assessment_manager.router)
 app.include_router(zero_trust.router)
 app.include_router(identity.router)
+app.include_router(certificates.router)
+app.include_router(device_compliance.router)
+app.include_router(privileged_access.router)
+app.include_router(endpoint_protection.router)
+app.include_router(security_alerts.router)
+app.include_router(threat_analytics.router)
+app.include_router(audit_logs.router)
+app.include_router(automation.router)
+app.include_router(drift_detection.router)
+app.include_router(security_score.router)
+app.include_router(policy_conflicts.router)
+app.include_router(tenant_risk.router)
+app.include_router(expiring_permissions.router)
+app.include_router(inactive_admins.router)
+app.include_router(shadow_apps.router)
 
 

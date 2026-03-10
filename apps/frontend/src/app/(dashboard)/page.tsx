@@ -1,13 +1,13 @@
 /*  BEGIN AUTODOC HEADER
 //  File: apps\frontend\src\app\(dashboard)\page.tsx
 //  Description: (edit inside USER NOTES below)
-// 
+//
 //  BEGIN AUTODOC META
 //  Version: 0.0.0.3
 //  Last-Updated: 2026-02-19 00:30:35
 //  Managed-By: autosave.ps1
 //  END AUTODOC META
-// 
+//
 //  BEGIN USER NOTES
 //  Your notes here. We will NEVER change this block.
 //  END USER NOTES
@@ -23,13 +23,11 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Radio,
-  GitCompareArrows,
   Database,
   TrendingUp,
   ArrowRight,
-  Eye,
-  Settings,
-  Camera,
+  KeyRound,
+  ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -96,127 +94,80 @@ function ActionCard({
   );
 }
 
-function severityBadge(severity: string) {
-  const map: Record<string, "danger" | "warning" | "info"> = {
-    HIGH: "danger",
-    MEDIUM: "warning",
-    LOW: "info",
-  };
-  return <Badge variant={map[severity] || "secondary"}>{severity}</Badge>;
-}
-
-function statusBadge(status: string) {
-  return (
-    <Badge variant={status === "active" ? "danger" : "success"}>
-      {status}
-    </Badge>
-  );
-}
-
 export default function OverviewPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["overview"],
     queryFn: api.getOverview,
   });
 
+  const { data: certs, isLoading: certsLoading } = useQuery({
+    queryKey: ["certificates"],
+    queryFn: api.getCertificates,
+  });
+
+  const expiring = certs?.certificates.filter(
+    (c) => c.status === "expired" || c.status === "critical"
+  ) ?? [];
+
   return (
     <div className="space-y-8">
-      <PageHeader title="Overview" description="Configuration drift monitoring dashboard" />
+      <PageHeader title="Overview" description="Tenant health monitoring dashboard" />
 
       {/* Metric cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard title="Active Monitors" value={data?.active_monitors_count ?? 0} icon={Radio} loading={isLoading} />
-        <MetricCard title="Active Drifts" value={data?.active_drifts_count ?? 0} icon={GitCompareArrows} loading={isLoading} />
         <MetricCard title="Resources Monitored" value={data?.resources_monitored_count ?? 0} icon={Database} loading={isLoading} />
         <MetricCard title="Success Rate" value={`${data?.success_rate ?? 100}%`} icon={TrendingUp} loading={isLoading} />
+        <MetricCard title="Expiring Secrets" value={expiring.length} icon={ShieldAlert} loading={certsLoading} />
       </div>
 
-      {/* Action cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <ActionCard title="View Drifts" description="Review detected configuration drift" icon={Eye} href="/drifts" />
-        <ActionCard title="Manage Monitors" description="Configure and manage monitors" icon={Settings} href="/monitors" />
-        <ActionCard title="View Snapshots" description="Browse configuration snapshots" icon={Camera} href="/snapshots" />
+      {/* Action card */}
+      <div className="grid grid-cols-1 gap-4">
+        <ActionCard title="Key Vault" description="Monitor secrets, certificates, tokens, and access policies" icon={KeyRound} href="/drifts" />
       </div>
 
-      {/* Recent Drifts + Monitor Status */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Recent Drifts */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <GitCompareArrows className="h-5 w-5" />
-              Recent Drifts
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
-            ) : data?.recent_drifts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No drifts detected yet</p>
-            ) : (
-              <div className="space-y-3">
-                {data?.recent_drifts.map((drift) => (
-                  <Link key={drift.id} href={`/drifts/${drift.id}`}>
-                    <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent/50 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm truncate">{drift.display_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {drift.resource_type} &middot; {drift.property_count} properties
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 ml-4 shrink-0">
-                        {severityBadge(drift.severity)}
-                        {statusBadge(drift.status)}
-                      </div>
+      {/* Expiring Certificates */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5" />
+            Expiring Certificates & Secrets
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {certsLoading ? (
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : expiring.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">No expired or critical certificates</p>
+          ) : (
+            <div className="space-y-3">
+              {expiring.slice(0, 10).map((cert) => (
+                <Link key={cert.id} href="/drifts">
+                  <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent/50 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{cert.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {cert.category} &middot; {cert.type}
+                        {cert.detail ? ` \u00b7 ${cert.detail}` : ""}
+                      </p>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Monitor Status */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Radio className="h-5 w-5" />
-              Monitor Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="space-y-3">
-                {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
-            ) : data?.monitor_status.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No monitors configured yet</p>
-            ) : (
-              <div className="space-y-3">
-                {data?.monitor_status.map((mon) => (
-                  <Link key={mon.id} href={`/monitors/${mon.id}`}>
-                    <div className="flex items-center justify-between rounded-lg border p-3 hover:bg-accent/50 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-sm truncate">{mon.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {mon.resource_count} resources &middot; Every {mon.schedule_hours}h
-                        </p>
-                      </div>
-                      <Badge variant={mon.enabled ? "success" : "secondary"}>
-                        {mon.enabled ? "enabled" : "disabled"}
-                      </Badge>
+                    <div className="flex items-center gap-2 ml-4 shrink-0">
+                      <span className="text-sm font-medium text-red-500">
+                        {cert.days_remaining !== null && cert.days_remaining < 0
+                          ? `Expired ${Math.abs(cert.days_remaining)}d ago`
+                          : `${cert.days_remaining}d left`}
+                      </span>
+                      <Badge variant="danger">{cert.status}</Badge>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
-
-
