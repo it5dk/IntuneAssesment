@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "All Services",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "infra/docker-compose.yml", "up", "--build"],
+      "port": 3000
+    },
+    {
+      "name": "Frontend",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "infra/docker-compose.yml", "up", "frontend"],
+      "port": 3000
+    },
+    {
+      "name": "Backend API",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "infra/docker-compose.yml", "up", "backend"],
+      "port": 8000
+    },
+    {
+      "name": "Backend + Workers",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "infra/docker-compose.yml", "up", "backend", "celery-worker", "celery-beat"],
+      "port": 8000
+    }
+  ]
+}
