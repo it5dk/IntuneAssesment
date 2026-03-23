@@ -68,9 +68,14 @@ async def get_privileged_access():
         errors.append({"source": "PIM Activations", "error": str(e)})
 
     # 3. Role eligibility schedules (standing privileged access) - use beta
+    # Requires Azure AD P2 + RoleManagementPolicy.Read.All permission
     try:
         eligible = await graph_client.get_all(
             f"{GRAPH_BETA}/roleManagement/directory/roleEligibilityScheduleInstances",
+            params={
+                "$select": "id,principalId,roleDefinitionId,assignmentType,startDateTime",
+                "$top": "100",
+            },
         )
         for item in eligible:
             results["alerts"].append({
